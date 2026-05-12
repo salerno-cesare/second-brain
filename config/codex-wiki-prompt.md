@@ -17,6 +17,9 @@ Cartelle, relative alla working directory:
 Fonti preparate:
 {source_list}
 
+Struttura artefatti TOGAF di riferimento:
+{togaf_reference}
+
 Best practice obbligatorie per la LLM Wiki:
 1. La wiki e' incrementale: prima preserva e migliora la struttura esistente, poi aggiungi nuove pagine solo se servono davvero.
 2. Ogni pagina deve essere atomica: un solo concetto, processo, entita, decisione, progetto o persona. Se una pagina copre piu' temi distinti, dividila.
@@ -52,21 +55,22 @@ Best practice obbligatorie per la LLM Wiki:
 
 Regole obbligatorie per la wiki alternativa TOGAF:
 1. In mode = compile aggiorna sempre anche wiki/togaf/ quando esistono informazioni utili nella wiki principale o nelle fonti preparate.
-2. Mantieni wiki/togaf/_index.md come indice navigabile degli artefatti TOGAF, raggruppato per fase ADM, dominio architetturale e tipo artefatto.
+2. Mantieni wiki/togaf/_index.md come indice navigabile degli artefatti TOGAF, raggruppato secondo la sequenza fase -> deliverable della sezione "Struttura artefatti TOGAF di riferimento".
 3. Mantieni wiki/togaf/_log.md come log append-only delle modifiche alla vista TOGAF.
-4. Crea una pagina Markdown per ogni artefatto TOGAF utile alla documentazione; usa nomi file kebab-case ASCII.
+4. Crea una pagina Markdown per ogni deliverable TOGAF utile alla documentazione seguendo la lista di riferimento; usa nomi file kebab-case ASCII e non creare deliverable fuori catalogo salvo esplicita richiesta dell'utente.
 5. Ogni pagina artefatto TOGAF deve iniziare con:
    # Titolo
    ## Metadati TOGAF
    - Fase ADM: ...
    - Dominio architetturale: ...
-   - Tipo artefatto: Catalogo | Matrice | Diagramma | Deliverable | Indice
+   - Tipo artefatto: Deliverable | Catalogo | Matrice | Diagramma | Indice
+   - Template di riferimento: ...
    - Stato contenuto: Completo | Parziale | Da verificare
 6. Dopo i metadati usa sezioni stabili: ## Scopo documentale, ## Contenuto indicizzato, ## Relazioni, ## Gap informativi, ## Fonti wiki.
 7. Gli artefatti TOGAF devono indicizzare e riorganizzare contenuti gia' supportati: non introdurre decisioni, sistemi, requisiti o relazioni non presenti nelle fonti o nella wiki principale.
 8. Usa link interni in formato [[slug|Titolo]] verso altri artefatti TOGAF e, quando utile, verso pagine della wiki principale usando il titolo canonico della pagina.
-9. Preferisci questi raggruppamenti quando applicabili: Architecture Vision, Business Architecture, Data Architecture, Application Architecture, Technology Architecture, Opportunities and Solutions, Migration Planning, Implementation Governance, Architecture Change Management, Requirements Management.
-10. Per i tipi artefatto usa l'impostazione TOGAF ad alto livello basata su cataloghi, matrici, diagrammi e deliverable; se una fonte non consente un artefatto completo, crea una pagina parziale e registra il gap.
+9. Usa esattamente le fasi presenti nella reference: Preliminary Phase, Phase A - Architecture Vision, Phase B - Business Architecture, Phase C - Information Systems Architecture, Phase D - Technology Architecture, Phase E - Opportunities and Solutions, Phase F - Migration Planning, Phase G - Implementation Governance, Phase H - Architecture Change Management.
+10. Se una fonte non consente di popolare un deliverable di riferimento, crea o mantieni una pagina parziale solo quando utile e registra chiaramente il gap; altrimenti elenca il deliverable come non popolato nell'indice TOGAF.
 
 Procedura di lavoro obbligatoria:
 1. Leggi prima .codex_sources/manifest.json, poi le fonti in .codex_sources/, poi le pagine gia' presenti in wiki/ rilevanti per i concetti trovati.

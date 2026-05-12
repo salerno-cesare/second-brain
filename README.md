@@ -67,6 +67,7 @@ Variabili principali in `.env.example`:
 - `CODEX_SOURCE_EXTRACT_TEMPLATE`: template dei file estratti in `knowledge/.codex_sources/`.
 - `CODEX_SOURCE_LIST_ITEM_TEMPLATE`: template di ogni voce fonte nel prompt principale.
 - `CODEX_SOURCE_LIST_EMPTY_TEMPLATE`: testo usato quando non ci sono fonti raw.
+- `CODEX_TOGAF_REFERENCE`: reference Markdown con la tassonomia fase/deliverable TOGAF usata per generare `knowledge/wiki/togaf/`.
 
 ## Endpoint
 - `GET /`

@@ -84,6 +84,7 @@ function renderMetadata(metadata) {
     ["Fase ADM", metadata?.adm_phase || "Non classificata"],
     ["Dominio", metadata?.domain || "Non classificato"],
     ["Tipo", metadata?.artifact_type || "Artefatto"],
+    ["Template", metadata?.template_reference || "Non indicato"],
     ["Stato", metadata?.status || "Da verificare"],
   ];
   rows.forEach(([label, value]) => {

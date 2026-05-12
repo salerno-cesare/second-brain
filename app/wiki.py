@@ -19,7 +19,7 @@ from .ingest import is_supported_file, normalize_text, read_text_from_file
 
 WIKI_LINK_RE = re.compile(r"\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]")
 TOGAF_META_RE = re.compile(
-    r"^-\s*(Fase ADM|Dominio architetturale|Tipo artefatto|Stato contenuto):\s*(.+?)\s*$",
+    r"^-\s*(Fase ADM|Dominio architetturale|Tipo artefatto|Template di riferimento|Stato contenuto):\s*(.+?)\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
 
@@ -64,6 +64,17 @@ SOURCE_CACHE_VERSION = 1
 WIKI_CONFIG_FILE = "_config.md"
 TOGAF_WIKI_DIR_NAME = "togaf"
 WIKI_LANGUAGE_RE = re.compile(r"^-\s*Codice lingua:\s*([a-z]{2})\s*$", re.MULTILINE)
+TOGAF_PHASE_ORDER = [
+    "Preliminary Phase",
+    "Phase A - Architecture Vision",
+    "Phase B - Business Architecture",
+    "Phase C - Information Systems Architecture",
+    "Phase D - Technology Architecture",
+    "Phase E - Opportunities and Solutions",
+    "Phase F - Migration Planning",
+    "Phase G - Implementation Governance",
+    "Phase H - Architecture Change Management",
+]
 
 WIKI_LANGUAGE_OPTIONS: dict[str, str] = {
     "it": "Italiano",
@@ -473,12 +484,14 @@ def extract_togaf_metadata(markdown: str, page: dict | WikiPage) -> dict:
         "adm_phase": "Non classificata",
         "domain": "Non classificato",
         "artifact_type": "Artefatto",
+        "template_reference": "Non indicato",
         "status": "Da verificare",
     }
     label_map = {
         "fase adm": "adm_phase",
         "dominio architetturale": "domain",
         "tipo artefatto": "artifact_type",
+        "template di riferimento": "template_reference",
         "stato contenuto": "status",
     }
     for match in TOGAF_META_RE.finditer(markdown):
@@ -515,16 +528,17 @@ def list_togaf_artifacts(togaf_dir: Path) -> dict:
         phases.setdefault(artifact["adm_phase"], []).append(artifact)
         types.setdefault(artifact["artifact_type"], []).append(artifact)
 
-    def ordered(mapping: dict[str, list[dict]]) -> list[dict]:
+    def ordered(mapping: dict[str, list[dict]], preferred_order: list[str] | None = None) -> list[dict]:
+        order = {name: index for index, name in enumerate(preferred_order or [])}
         return [
             {"name": name, "artifacts": sorted(items, key=lambda item: item["title"].lower())}
-            for name, items in sorted(mapping.items(), key=lambda item: item[0].lower())
+            for name, items in sorted(mapping.items(), key=lambda item: (order.get(item[0], 999), item[0].lower()))
         ]
 
     return {
         "artifacts": sorted(artifacts, key=lambda item: item["title"].lower()),
         "domains": ordered(groups),
-        "phases": ordered(phases),
+        "phases": ordered(phases, TOGAF_PHASE_ORDER),
         "types": ordered(types),
     }
 
@@ -949,6 +963,13 @@ def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str
     return "\n".join(items)
 
 
+def _load_togaf_reference(settings: Settings) -> str:
+    try:
+        return _read_config_text(settings.codex_togaf_reference_path, "Reference artefatti TOGAF").strip()
+    except FileNotFoundError:
+        return "Reference artefatti TOGAF non configurata."
+
+
 def build_codex_prompt(
     settings: Settings,
     mode: str,
@@ -963,6 +984,7 @@ def build_codex_prompt(
             "mode": mode,
             "task": _load_codex_task_prompt(settings, mode),
             "source_list": _build_source_list(settings, sources),
+            "togaf_reference": _load_togaf_reference(settings),
             "language": language_label,
             "language_instruction": (
                 f"Scrivi e mantieni tutte le pagine wiki, _index.md, _log.md e il riepilogo finale "

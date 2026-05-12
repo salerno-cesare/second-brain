@@ -11,6 +11,7 @@ from fastapi import Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from .config import get_settings
 from .ingest import is_supported_file, list_source_files
@@ -23,6 +24,10 @@ from .wiki import (
     read_wiki_page,
     run_codex_wiki_job,
     search_wiki_pages,
+    normalize_wiki_language,
+    get_configured_wiki_language,
+    wiki_language_label,
+    WIKI_LANGUAGE_OPTIONS,
 )
 
 settings = get_settings()
@@ -34,6 +39,8 @@ codex_lock = threading.Lock()
 codex_state: dict = {
     "running": False,
     "mode": None,
+    "language": "it",
+    "language_label": WIKI_LANGUAGE_OPTIONS["it"],
     "message": "Nessuna compilazione avviata.",
     "ok": None,
     "returncode": None,
@@ -44,6 +51,10 @@ codex_state: dict = {
     "stderr": "",
     "sources": [],
 }
+
+
+class CodexJobRequest(BaseModel):
+    language: str = "it"
 
 
 @app.on_event("startup")
@@ -68,6 +79,7 @@ def home(request: Request):
 @app.get("/sources", response_class=HTMLResponse)
 def sources_page(request: Request):
     processed_dir = settings.raw_dir.parent / "processed"
+    configured_language = get_configured_wiki_language(settings.wiki_dir)
     return templates.TemplateResponse(
         "sources.html",
         {
@@ -80,6 +92,9 @@ def sources_page(request: Request):
             "codex_state": codex_state,
             "codex_command": settings.codex_command,
             "codex_shell": settings.codex_shell,
+            "wiki_languages": WIKI_LANGUAGE_OPTIONS,
+            "selected_wiki_language": configured_language or "it",
+            "wiki_language_locked": configured_language is not None,
         },
     )
 
@@ -189,7 +204,12 @@ def api_wiki_graph():
 
 @app.get("/api/wiki/status")
 def api_wiki_status():
-    return JSONResponse(content=codex_state)
+    configured_language = get_configured_wiki_language(settings.wiki_dir)
+    state = dict(codex_state)
+    state["configured_language"] = configured_language
+    state["configured_language_label"] = wiki_language_label(configured_language) if configured_language else None
+    state["language_locked"] = configured_language is not None
+    return JSONResponse(content=state)
 
 
 def _set_codex_state(**values) -> None:
@@ -197,10 +217,16 @@ def _set_codex_state(**values) -> None:
         codex_state.update(values)
 
 
-def _run_codex_background(mode: str) -> None:
+def _run_codex_background(mode: str, language: str) -> None:
+    configured_language = get_configured_wiki_language(settings.wiki_dir)
+    if configured_language:
+        language = configured_language
+    language = normalize_wiki_language(language)
     _set_codex_state(
         running=True,
         mode=mode,
+        language=language,
+        language_label=WIKI_LANGUAGE_OPTIONS[language],
         message="Codex sta compilando la wiki dalla shell locale...",
         ok=None,
         returncode=None,
@@ -212,7 +238,7 @@ def _run_codex_background(mode: str) -> None:
         sources=[],
     )
     try:
-        result: CodexRunResult = run_codex_wiki_job(settings, mode=mode)
+        result: CodexRunResult = run_codex_wiki_job(settings, mode=mode, language=language)
         _set_codex_state(
             running=False,
             message=result.message,
@@ -238,7 +264,11 @@ def _run_codex_background(mode: str) -> None:
         )
 
 
-def _start_codex_job(mode: str) -> JSONResponse:
+def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
+    configured_language = get_configured_wiki_language(settings.wiki_dir)
+    if configured_language:
+        language = configured_language
+    language = normalize_wiki_language(language)
     with codex_lock:
         if codex_state["running"]:
             raise HTTPException(status_code=409, detail="Una compilazione Codex e' gia' in corso.")
@@ -246,6 +276,8 @@ def _start_codex_job(mode: str) -> JSONResponse:
             {
                 "running": True,
                 "mode": mode,
+                "language": language,
+                "language_label": WIKI_LANGUAGE_OPTIONS[language],
                 "message": "Codex sta compilando la wiki dalla shell locale...",
                 "ok": None,
                 "returncode": None,
@@ -258,9 +290,9 @@ def _start_codex_job(mode: str) -> JSONResponse:
             }
         )
 
-    thread = threading.Thread(target=_run_codex_background, args=(mode,), daemon=True)
+    thread = threading.Thread(target=_run_codex_background, args=(mode, language), daemon=True)
     thread.start()
-    return JSONResponse(content={"status": "accepted", "mode": mode}, status_code=202)
+    return JSONResponse(content={"status": "accepted", "mode": mode, "language": language}, status_code=202)
 
 
 def _source_text_path(title: str) -> Path:
@@ -283,13 +315,13 @@ def _source_text_path(title: str) -> Path:
 
 
 @app.post("/api/wiki/compile")
-def api_wiki_compile():
-    return _start_codex_job("compile")
+def api_wiki_compile(payload: CodexJobRequest | None = None):
+    return _start_codex_job("compile", payload.language if payload else "it")
 
 
 @app.post("/api/wiki/lint")
-def api_wiki_lint():
-    return _start_codex_job("lint")
+def api_wiki_lint(payload: CodexJobRequest | None = None):
+    return _start_codex_job("lint", payload.language if payload else "it")
 
 
 @app.post("/api/upload")

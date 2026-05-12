@@ -39,10 +39,13 @@ In VS Code usa il profilo **LLM Wiki: locale FastAPI** oppure il task **App: run
 
 ## Uso
 1. Carica un file dalla UI o copialo in `knowledge/raw/`.
-2. Premi **Compila**.
-3. L'app prepara gli estratti in `knowledge/.codex_sources/`.
-4. Codex CLI viene avviato via PowerShell locale e scrive solo in `knowledge/wiki/`.
-5. Apri le pagine generate dalla sezione **Pagine Wiki**.
+2. Scegli la lingua della wiki, se non e' gia' configurata. Il default e' **Italiano**.
+3. Premi **Compila**.
+4. L'app prepara gli estratti in `knowledge/.codex_sources/`.
+5. Codex CLI viene avviato via PowerShell locale e scrive solo in `knowledge/wiki/`.
+6. Apri le pagine generate dalla sezione **Pagine Wiki**.
+
+La prima compilazione salva la lingua in `knowledge/wiki/_config.md`; dopo il salvataggio non e' piu' modificabile dalla UI per evitare wiki multilingua accidentali.
 
 Usa **Lint** per far controllare a Codex link mancanti, duplicati, pagine orfane, contraddizioni e struttura delle pagine.
 

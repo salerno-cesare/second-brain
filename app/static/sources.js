@@ -5,12 +5,17 @@ const textOutput = document.getElementById("text-upload-result");
 const compileButton = document.getElementById("compile-wiki");
 const lintButton = document.getElementById("lint-wiki");
 const codexStatus = document.getElementById("codex-status");
+const wikiLanguage = document.getElementById("wiki-language");
 const sourceList = document.getElementById("source-list");
 const sourceCount = document.getElementById("source-count");
 const processedList = document.getElementById("processed-list");
 const processedCount = document.getElementById("processed-count");
 
 let codexWasRunning = false;
+const storedWikiLanguage = window.localStorage.getItem("wiki-language");
+if (wikiLanguage && storedWikiLanguage && !wikiLanguage.disabled) {
+  wikiLanguage.value = storedWikiLanguage;
+}
 
 function updateSourceCount() {
   if (!sourceList || !sourceCount) {
@@ -39,7 +44,15 @@ async function refreshCodexStatus() {
   } else if (data.finished_at) {
     message = `${message} Fine: ${data.finished_at}.`;
   }
+  if (data.language_label) {
+    message = `${message} Lingua: ${data.language_label}.`;
+  }
   codexStatus.textContent = message;
+
+  if (wikiLanguage && data.language_locked) {
+    wikiLanguage.value = data.configured_language || wikiLanguage.value;
+    wikiLanguage.disabled = true;
+  }
 
   if (compileButton) {
     compileButton.disabled = Boolean(data.running);
@@ -63,9 +76,19 @@ async function startCodexJob(kind) {
   }
   codexStatus.textContent = "Avvio Codex...";
   const endpoint = kind === "lint" ? "/api/wiki/lint" : "/api/wiki/compile";
+  const language = wikiLanguage?.value || "it";
+  if (wikiLanguage && !wikiLanguage.disabled) {
+    window.localStorage.setItem("wiki-language", language);
+  }
 
   try {
-    const resp = await fetch(endpoint, { method: "POST" });
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ language }),
+    });
     const data = await resp.json();
     if (!resp.ok) {
       codexStatus.textContent = `Errore: ${data.detail || "operazione non avviata"}`;

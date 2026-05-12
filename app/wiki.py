@@ -57,6 +57,108 @@ class _WikiDocument:
 
 
 SOURCE_CACHE_VERSION = 1
+WIKI_CONFIG_FILE = "_config.md"
+WIKI_LANGUAGE_RE = re.compile(r"^-\s*Codice lingua:\s*([a-z]{2})\s*$", re.MULTILINE)
+
+WIKI_LANGUAGE_OPTIONS: dict[str, str] = {
+    "it": "Italiano",
+    "en": "English",
+    "es": "Espanol",
+    "fr": "Francais",
+    "de": "Deutsch",
+    "pt": "Portugues",
+    "nl": "Nederlands",
+    "pl": "Polski",
+    "ro": "Romana",
+    "ar": "Arabo",
+    "zh": "Cinese semplificato",
+    "ja": "Giapponese",
+}
+DEFAULT_WIKI_LANGUAGE = "it"
+
+
+def normalize_wiki_language(language: str | None) -> str:
+    code = (language or DEFAULT_WIKI_LANGUAGE).strip().lower()
+    return code if code in WIKI_LANGUAGE_OPTIONS else DEFAULT_WIKI_LANGUAGE
+
+
+def wiki_language_label(language: str | None) -> str:
+    return WIKI_LANGUAGE_OPTIONS[normalize_wiki_language(language)]
+
+
+def read_wiki_config_markdown(wiki_dir: Path) -> str:
+    config_path = wiki_dir / WIKI_CONFIG_FILE
+    if not config_path.exists():
+        return ""
+
+    try:
+        return config_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _format_wiki_config_markdown(language: str) -> str:
+    language = normalize_wiki_language(language)
+    return (
+        "# Configurazione Wiki\n\n"
+        "Questa pagina contiene impostazioni strutturali della wiki locale.\n\n"
+        "## Lingua\n\n"
+        f"- Codice lingua: {language}\n"
+        f"- Nome lingua: {wiki_language_label(language)}\n"
+        "- Bloccata: si\n"
+        f"- Creata il: {datetime.now(timezone.utc).isoformat()}\n\n"
+        "## Note operative\n\n"
+        "- La lingua viene scelta alla prima compilazione della wiki.\n"
+        "- Dopo il salvataggio, la lingua non viene modificata dalla UI.\n"
+    )
+
+
+def _append_wiki_config_log(wiki_dir: Path, language: str) -> None:
+    log_path = wiki_dir / "_log.md"
+    if log_path.exists():
+        try:
+            current_log = log_path.read_text(encoding="utf-8")
+        except OSError:
+            return
+    else:
+        current_log = "# Log operativo\n\n"
+
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    entry = (
+        f"\n## {timestamp} - configurazione lingua\n\n"
+        "- Pagine create:\n"
+        "  - [[_config|Configurazione Wiki]]\n"
+        "- Pagine aggiornate:\n"
+        "  - [[_log|Log operativo]]\n"
+        f"- Lingua wiki bloccata: {wiki_language_label(language)} (`{language}`).\n"
+        "- Dubbi aperti:\n"
+        "  - Nessuno.\n"
+    )
+
+    try:
+        log_path.write_text(current_log.rstrip() + entry + "\n", encoding="utf-8")
+    except OSError:
+        return
+
+
+def get_configured_wiki_language(wiki_dir: Path) -> str | None:
+    markdown = read_wiki_config_markdown(wiki_dir)
+    match = WIKI_LANGUAGE_RE.search(markdown)
+    if not match:
+        return None
+    return normalize_wiki_language(match.group(1))
+
+
+def ensure_wiki_language_config(wiki_dir: Path, language: str | None) -> str:
+    configured_language = get_configured_wiki_language(wiki_dir)
+    if configured_language:
+        return configured_language
+
+    selected_language = normalize_wiki_language(language)
+    wiki_dir.mkdir(parents=True, exist_ok=True)
+    (wiki_dir / WIKI_CONFIG_FILE).write_text(_format_wiki_config_markdown(selected_language), encoding="utf-8")
+    _append_wiki_config_log(wiki_dir, selected_language)
+    return selected_language
 
 
 def ensure_wiki_layout(settings: Settings) -> None:
@@ -752,14 +854,25 @@ def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str
     return "\n".join(items)
 
 
-def build_codex_prompt(settings: Settings, mode: str, sources: list[PreparedSource]) -> str:
+def build_codex_prompt(
+    settings: Settings,
+    mode: str,
+    sources: list[PreparedSource],
+    language: str = DEFAULT_WIKI_LANGUAGE,
+) -> str:
     template = _read_config_text(settings.codex_prompt_template_path, "Prompt template Codex")
+    language_label = wiki_language_label(language)
     return _format_config_template(
         template,
         {
             "mode": mode,
             "task": _load_codex_task_prompt(settings, mode),
             "source_list": _build_source_list(settings, sources),
+            "language": language_label,
+            "language_instruction": (
+                f"Scrivi e mantieni tutte le pagine wiki, _index.md, _log.md e il riepilogo finale "
+                f"in lingua: {language_label}."
+            ),
         },
         settings.codex_prompt_template_path,
     )
@@ -797,8 +910,13 @@ exit $LASTEXITCODE
 """.strip()
 
 
-def run_codex_wiki_job(settings: Settings, mode: str = "compile") -> CodexRunResult:
+def run_codex_wiki_job(
+    settings: Settings,
+    mode: str = "compile",
+    language: str = DEFAULT_WIKI_LANGUAGE,
+) -> CodexRunResult:
     started = time.monotonic()
+    language = normalize_wiki_language(language)
     sources = prepare_sources_for_codex(settings)
 
     if mode == "compile" and not sources:
@@ -813,7 +931,8 @@ def run_codex_wiki_job(settings: Settings, mode: str = "compile") -> CodexRunRes
             sources=sources,
         )
 
-    prompt = build_codex_prompt(settings, mode, sources)
+    language = ensure_wiki_language_config(settings.wiki_dir, language)
+    prompt = build_codex_prompt(settings, mode, sources, language)
     source_text_dir = _source_text_dir(settings)
     prompt_path = source_text_dir / "codex-prompt.txt"
     output_path = source_text_dir / "codex-last-message.txt"

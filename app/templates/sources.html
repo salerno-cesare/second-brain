@@ -23,6 +23,18 @@
       <p id="text-upload-result" class="status-line"></p>
     </div>
 
+    <label class="language-control" for="wiki-language">
+      <span>Lingua wiki</span>
+      <select id="wiki-language" name="language" {% if wiki_language_locked %}disabled{% endif %}>
+        {% for code, label in wiki_languages.items() %}
+        <option value="{{ code }}" {% if code == selected_wiki_language %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {% if wiki_language_locked %}
+      <small>Configurazione salvata e bloccata per questa wiki.</small>
+      {% endif %}
+    </label>
+
     <div class="button-row compact">
       <button type="button" id="compile-wiki">Compila</button>
       <button type="button" id="lint-wiki" class="secondary">Lint</button>

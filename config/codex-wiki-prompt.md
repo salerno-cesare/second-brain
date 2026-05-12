@@ -5,6 +5,9 @@ Modalita corrente: {mode}
 Obiettivo:
 {task}
 
+Lingua della wiki:
+{language_instruction}
+
 Cartelle, relative alla working directory:
 - raw/: fonti originali caricate dall'utente. Non modificarle.
 - .codex_sources/: testo estratto dalle fonti per facilitare la lettura. Non modificarlo.
@@ -44,6 +47,7 @@ Best practice obbligatorie per la LLM Wiki:
 22. Quando utile, aggiungi cross-link anche per persone, clienti, progetti, capability, deliverable, strumenti, metriche e dipendenze tecniche.
 23. Non riscrivere l'intera wiki senza motivo: modifica solo i file Markdown necessari per ottenere un miglioramento netto e verificabile.
 24. Non modificare codice applicativo, database, raw/ o .codex_sources/.
+25. Non modificare wiki/_config.md: contiene la lingua strutturale della wiki, gestita dall'applicazione e bloccata dopo la prima compilazione.
 
 Procedura di lavoro obbligatoria:
 1. Leggi prima .codex_sources/manifest.json, poi le fonti in .codex_sources/, poi le pagine gia' presenti in wiki/ rilevanti per i concetti trovati.

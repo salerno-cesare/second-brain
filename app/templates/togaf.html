@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="obsidian-shell togaf-shell" data-initial-slug="{{ initial_slug }}">
+  <aside class="vault-sidebar">
+    <div class="vault-title">
+      <span>TOGAF</span>
+      <span class="count-pill">{{ togaf_pages | length }}</span>
+    </div>
+
+    <a class="manage-link" href="/sources">Compila da sorgenti</a>
+
+    <input id="vault-search" class="vault-search" type="search" placeholder="Cerca artefatti" autocomplete="off" />
+    <nav id="page-list" class="note-list" aria-label="Artefatti TOGAF">
+      {% for page in togaf_pages %}
+      <button class="note-item" type="button" data-slug="{{ page.slug }}" data-title="{{ page.title }}">
+        <span>{{ page.title }}</span>
+        <small>{{ page.links }}</small>
+      </button>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <section class="note-pane">
+    <div class="tab-bar">
+      <button id="active-tab" class="tab active" type="button">Nessun artefatto</button>
+      <div id="note-meta" class="note-meta"></div>
+    </div>
+    <article id="note-content" class="note-content wiki-content">
+      <div class="empty-note">Seleziona un artefatto TOGAF.</div>
+    </article>
+  </section>
+
+  <aside class="inspector-sidebar togaf-inspector">
+    <section class="inspector-section togaf-metadata-section">
+      <h2>Metadati</h2>
+      <dl id="togaf-metadata" class="metadata-list"></dl>
+    </section>
+
+    <section class="inspector-section">
+      <h2>Fasi ADM</h2>
+      <div id="togaf-phase-list" class="artifact-group-list">
+        {% for group in togaf_artifacts.phases %}
+        <details open>
+          <summary>{{ group.name }} <span>{{ group.artifacts | length }}</span></summary>
+          {% for artifact in group.artifacts %}
+          <button type="button" class="inspector-link js-artifact-link" data-slug="{{ artifact.slug }}">{{ artifact.title }}</button>
+          {% endfor %}
+        </details>
+        {% else %}
+        <p class="empty-list">Nessun artefatto TOGAF ancora generato.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="inspector-section">
+      <h2>Domini</h2>
+      <div id="togaf-domain-list" class="artifact-group-list">
+        {% for group in togaf_artifacts.domains %}
+        <details>
+          <summary>{{ group.name }} <span>{{ group.artifacts | length }}</span></summary>
+          {% for artifact in group.artifacts %}
+          <button type="button" class="inspector-link js-artifact-link" data-slug="{{ artifact.slug }}">{{ artifact.title }}</button>
+          {% endfor %}
+        </details>
+        {% else %}
+        <p class="empty-list">Nessun dominio ancora indicizzato.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="inspector-section">
+      <h2>Outlinks</h2>
+      <ul id="outlink-list" class="link-list"></ul>
+    </section>
+    <section class="inspector-section">
+      <h2>Backlinks</h2>
+      <ul id="backlink-list" class="link-list"></ul>
+    </section>
+    <section class="inspector-section graph-section">
+      <h2>Graph TOGAF</h2>
+      <svg id="wiki-graph" viewBox="0 0 320 240" role="img" aria-label="TOGAF graph"></svg>
+    </section>
+  </aside>
+</div>
+
+<script src="/static/togaf.js?v=togaf"></script>
+{% endblock %}

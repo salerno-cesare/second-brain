@@ -556,6 +556,59 @@ pre {
   color: var(--faint);
 }
 
+.metadata-list {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+  gap: 0.38rem 0.7rem;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.metadata-list dt {
+  color: var(--faint);
+  font-weight: 700;
+}
+
+.metadata-list dd {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.artifact-group-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.artifact-group-list details {
+  border: 1px solid rgba(124, 155, 194, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 13, 21, 0.35);
+  padding: 0.35rem;
+}
+
+.artifact-group-list summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 28px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.artifact-group-list summary span {
+  color: var(--faint);
+  font-size: 0.72rem;
+}
+
+.artifact-group-list .inspector-link {
+  min-height: 28px;
+  margin-top: 0.2rem;
+}
+
 .graph-section {
   border-bottom: 0;
 }

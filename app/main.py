@@ -17,9 +17,12 @@ from .config import get_settings
 from .ingest import is_supported_file, list_source_files
 from .wiki import (
     CodexRunResult,
+    TOGAF_WIKI_DIR_NAME,
     build_wiki_graph,
     ensure_wiki_layout,
+    get_togaf_page_payload,
     get_wiki_page_payload,
+    list_togaf_artifacts,
     list_wiki_pages,
     read_wiki_page,
     run_codex_wiki_job,
@@ -99,11 +102,37 @@ def sources_page(request: Request):
     )
 
 
+def _togaf_dir() -> Path:
+    return settings.wiki_dir / TOGAF_WIKI_DIR_NAME
+
+
+@app.get("/togaf", response_class=HTMLResponse)
+def togaf_home(request: Request):
+    togaf_pages = list_wiki_pages(_togaf_dir())
+    initial_slug = "_index" if any(page.slug == "_index" for page in togaf_pages) else (togaf_pages[0].slug if togaf_pages else "")
+    return templates.TemplateResponse(
+        "togaf.html",
+        {
+            "request": request,
+            "togaf_pages": togaf_pages,
+            "togaf_artifacts": list_togaf_artifacts(_togaf_dir()),
+            "initial_slug": initial_slug,
+        },
+    )
+
+
 @app.get("/wiki/{slug}")
 def wiki_detail(slug: str):
     if not read_wiki_page(settings.wiki_dir, slug):
         raise HTTPException(status_code=404, detail="Wiki page not found")
     return RedirectResponse(url=f"/#{quote(slug)}")
+
+
+@app.get("/togaf/{slug}")
+def togaf_detail(slug: str):
+    if not read_wiki_page(_togaf_dir(), slug):
+        raise HTTPException(status_code=404, detail="TOGAF artifact not found")
+    return RedirectResponse(url=f"/togaf#{quote(slug)}")
 
 
 @app.get("/api/sources")
@@ -200,6 +229,34 @@ def api_wiki_search(q: str = Query(default="", max_length=120)):
 @app.get("/api/wiki/graph")
 def api_wiki_graph():
     return JSONResponse(content=build_wiki_graph(settings.wiki_dir))
+
+
+@app.get("/api/togaf/pages")
+def api_togaf_pages():
+    return JSONResponse(content={"pages": [page.__dict__ for page in list_wiki_pages(_togaf_dir())]})
+
+
+@app.get("/api/togaf/page/{slug}")
+def api_togaf_page(slug: str):
+    payload = get_togaf_page_payload(_togaf_dir(), slug)
+    if not payload:
+        raise HTTPException(status_code=404, detail="TOGAF artifact not found")
+    return JSONResponse(content=payload)
+
+
+@app.get("/api/togaf/search")
+def api_togaf_search(q: str = Query(default="", max_length=120)):
+    return JSONResponse(content={"query": q, "results": search_wiki_pages(_togaf_dir(), q)})
+
+
+@app.get("/api/togaf/graph")
+def api_togaf_graph():
+    return JSONResponse(content=build_wiki_graph(_togaf_dir()))
+
+
+@app.get("/api/togaf/artifacts")
+def api_togaf_artifacts():
+    return JSONResponse(content=list_togaf_artifacts(_togaf_dir()))
 
 
 @app.get("/api/wiki/status")

@@ -12,6 +12,7 @@ Cartelle, relative alla working directory:
 - raw/: fonti originali caricate dall'utente. Non modificarle.
 - .codex_sources/: testo estratto dalle fonti per facilitare la lettura. Non modificarlo.
 - wiki/: knowledge base Markdown da creare e mantenere. Scrivi solo qui.
+- wiki/togaf/: wiki alternativa Markdown da creare e mantenere per indicizzare i contenuti in viste e artefatti TOGAF.
 
 Fonti preparate:
 {source_list}
@@ -49,11 +50,29 @@ Best practice obbligatorie per la LLM Wiki:
 24. Non modificare codice applicativo, database, raw/ o .codex_sources/.
 25. Non modificare wiki/_config.md: contiene la lingua strutturale della wiki, gestita dall'applicazione e bloccata dopo la prima compilazione.
 
+Regole obbligatorie per la wiki alternativa TOGAF:
+1. In mode = compile aggiorna sempre anche wiki/togaf/ quando esistono informazioni utili nella wiki principale o nelle fonti preparate.
+2. Mantieni wiki/togaf/_index.md come indice navigabile degli artefatti TOGAF, raggruppato per fase ADM, dominio architetturale e tipo artefatto.
+3. Mantieni wiki/togaf/_log.md come log append-only delle modifiche alla vista TOGAF.
+4. Crea una pagina Markdown per ogni artefatto TOGAF utile alla documentazione; usa nomi file kebab-case ASCII.
+5. Ogni pagina artefatto TOGAF deve iniziare con:
+   # Titolo
+   ## Metadati TOGAF
+   - Fase ADM: ...
+   - Dominio architetturale: ...
+   - Tipo artefatto: Catalogo | Matrice | Diagramma | Deliverable | Indice
+   - Stato contenuto: Completo | Parziale | Da verificare
+6. Dopo i metadati usa sezioni stabili: ## Scopo documentale, ## Contenuto indicizzato, ## Relazioni, ## Gap informativi, ## Fonti wiki.
+7. Gli artefatti TOGAF devono indicizzare e riorganizzare contenuti gia' supportati: non introdurre decisioni, sistemi, requisiti o relazioni non presenti nelle fonti o nella wiki principale.
+8. Usa link interni in formato [[slug|Titolo]] verso altri artefatti TOGAF e, quando utile, verso pagine della wiki principale usando il titolo canonico della pagina.
+9. Preferisci questi raggruppamenti quando applicabili: Architecture Vision, Business Architecture, Data Architecture, Application Architecture, Technology Architecture, Opportunities and Solutions, Migration Planning, Implementation Governance, Architecture Change Management, Requirements Management.
+10. Per i tipi artefatto usa l'impostazione TOGAF ad alto livello basata su cataloghi, matrici, diagrammi e deliverable; se una fonte non consente un artefatto completo, crea una pagina parziale e registra il gap.
+
 Procedura di lavoro obbligatoria:
 1. Leggi prima .codex_sources/manifest.json, poi le fonti in .codex_sources/, poi le pagine gia' presenti in wiki/ rilevanti per i concetti trovati.
 2. Identifica i concetti canonici, le entita nominate, le relazioni e gli eventuali conflitti o sovrapposizioni.
 3. Decidi per ogni concetto se creare, aggiornare, unire, dividere o lasciare invariata una pagina esistente.
-4. Aggiorna sempre anche _index.md e _log.md se il contenuto della wiki cambia.
+4. Aggiorna sempre anche _index.md e _log.md se il contenuto della wiki cambia; per la vista TOGAF aggiorna wiki/togaf/_index.md e wiki/togaf/_log.md.
 5. Prima di concludere, controlla: naming coerente, sezioni minime presenti, link sensati, fonti esplicite, nessuna affermazione importante senza supporto.
 
 Criteri specifici per questa esecuzione:

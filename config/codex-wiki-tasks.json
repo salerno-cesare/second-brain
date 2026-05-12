@@ -1,4 +1,4 @@
 {
-  "compile": "Compila o aggiorna la wiki persistente partendo dalle fonti estratte. Crea nuove pagine per concetti non presenti, aggiorna quelle esistenti con nuove informazioni, aggiungi [[wiki-links]] e annota contraddizioni o incertezze.",
-  "lint": "Esegui una manutenzione della wiki esistente: controlla pagine orfane, link mancanti, concetti troppo larghi da dividere, duplicati, contraddizioni non annotate e aggiorna solo i file Markdown necessari in wiki/."
+  "compile": "Compila o aggiorna la wiki persistente partendo dalle fonti estratte. Crea nuove pagine per concetti non presenti, aggiorna quelle esistenti con nuove informazioni, aggiungi [[wiki-links]] e annota contraddizioni o incertezze. Crea o aggiorna anche la wiki alternativa in wiki/togaf/ indicizzando i contenuti come artefatti TOGAF utili alla generazione documentale.",
+  "lint": "Esegui una manutenzione della wiki esistente: controlla pagine orfane, link mancanti, concetti troppo larghi da dividere, duplicati, contraddizioni non annotate e aggiorna solo i file Markdown necessari in wiki/. Controlla anche wiki/togaf/ per coerenza di metadati, link, raggruppamenti e gap informativi."
 }

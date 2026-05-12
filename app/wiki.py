@@ -18,6 +18,10 @@ from .config import Settings
 from .ingest import is_supported_file, normalize_text, read_text_from_file
 
 WIKI_LINK_RE = re.compile(r"\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]")
+TOGAF_META_RE = re.compile(
+    r"^-\s*(Fase ADM|Dominio architetturale|Tipo artefatto|Stato contenuto):\s*(.+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,7 @@ class _WikiDocument:
 
 SOURCE_CACHE_VERSION = 1
 WIKI_CONFIG_FILE = "_config.md"
+TOGAF_WIKI_DIR_NAME = "togaf"
 WIKI_LANGUAGE_RE = re.compile(r"^-\s*Codice lingua:\s*([a-z]{2})\s*$", re.MULTILINE)
 
 WIKI_LANGUAGE_OPTIONS: dict[str, str] = {
@@ -165,12 +170,32 @@ def ensure_wiki_layout(settings: Settings) -> None:
     settings.source_dir.mkdir(parents=True, exist_ok=True)
     settings.raw_dir.mkdir(parents=True, exist_ok=True)
     settings.wiki_dir.mkdir(parents=True, exist_ok=True)
+    togaf_dir = settings.wiki_dir / TOGAF_WIKI_DIR_NAME
+    togaf_dir.mkdir(parents=True, exist_ok=True)
 
     index_path = settings.wiki_dir / "_index.md"
     if not index_path.exists():
         index_path.write_text(
             "# Indice Wiki\n\n"
             "Questa pagina viene aggiornata da Codex durante la compilazione della knowledge base.\n",
+            encoding="utf-8",
+        )
+
+    togaf_index_path = togaf_dir / "_index.md"
+    if not togaf_index_path.exists():
+        togaf_index_path.write_text(
+            "# Indice TOGAF\n\n"
+            "Questa wiki alternativa indicizza i contenuti della knowledge base secondo viste e artefatti TOGAF.\n\n"
+            "## Artefatti\n\n"
+            "- Nessun artefatto TOGAF ancora generato.\n",
+            encoding="utf-8",
+        )
+
+    togaf_log_path = togaf_dir / "_log.md"
+    if not togaf_log_path.exists():
+        togaf_log_path.write_text(
+            "# Log operativo TOGAF\n\n"
+            "Questo log traccia le modifiche alla wiki alternativa TOGAF.\n",
             encoding="utf-8",
         )
 
@@ -338,7 +363,7 @@ def get_wiki_backlinks(
     return backlinks
 
 
-def get_wiki_page_payload(wiki_dir: Path, slug: str) -> dict | None:
+def get_wiki_page_payload(wiki_dir: Path, slug: str, link_base_path: str = "/wiki") -> dict | None:
     documents = _load_wiki_documents(wiki_dir)
     pages_by_slug = _wiki_documents_by_slug(documents)
     safe_slug = Path(slug).name
@@ -350,10 +375,18 @@ def get_wiki_page_payload(wiki_dir: Path, slug: str) -> dict | None:
     return {
         "page": document.page.__dict__,
         "markdown": document.markdown,
-        "html": render_wiki_markdown(document.markdown, wiki_dir, title_map, pages_by_slug),
+        "html": render_wiki_markdown(document.markdown, wiki_dir, title_map, pages_by_slug, link_base_path),
         "outgoing": extract_wiki_links(document.markdown, wiki_dir, title_map, pages_by_slug),
         "backlinks": get_wiki_backlinks(wiki_dir, document.page.slug, documents, title_map, pages_by_slug),
     }
+
+
+def get_togaf_page_payload(wiki_dir: Path, slug: str) -> dict | None:
+    payload = get_wiki_page_payload(wiki_dir, slug, link_base_path="/togaf")
+    if not payload:
+        return None
+    payload["togaf"] = extract_togaf_metadata(payload["markdown"], payload["page"])
+    return payload
 
 
 def search_wiki_pages(wiki_dir: Path, query: str, limit: int = 30) -> list[dict]:
@@ -435,11 +468,73 @@ def build_wiki_graph(wiki_dir: Path) -> dict:
     return {"nodes": nodes + list(missing_nodes.values()), "edges": edges}
 
 
+def extract_togaf_metadata(markdown: str, page: dict | WikiPage) -> dict:
+    metadata = {
+        "adm_phase": "Non classificata",
+        "domain": "Non classificato",
+        "artifact_type": "Artefatto",
+        "status": "Da verificare",
+    }
+    label_map = {
+        "fase adm": "adm_phase",
+        "dominio architetturale": "domain",
+        "tipo artefatto": "artifact_type",
+        "stato contenuto": "status",
+    }
+    for match in TOGAF_META_RE.finditer(markdown):
+        key = label_map.get(match.group(1).strip().lower())
+        if key:
+            metadata[key] = match.group(2).strip()
+
+    if isinstance(page, WikiPage):
+        metadata["slug"] = page.slug
+        metadata["title"] = page.title
+        metadata["rel_path"] = page.rel_path
+        metadata["links"] = page.links
+    else:
+        metadata["slug"] = page.get("slug", "")
+        metadata["title"] = page.get("title", "")
+        metadata["rel_path"] = page.get("rel_path", "")
+        metadata["links"] = page.get("links", 0)
+    return metadata
+
+
+def list_togaf_artifacts(togaf_dir: Path) -> dict:
+    documents = _load_wiki_documents(togaf_dir)
+    artifacts = [
+        extract_togaf_metadata(document.markdown, document.page)
+        for document in documents
+        if not document.page.slug.startswith("_")
+    ]
+    groups: dict[str, list[dict]] = {}
+    phases: dict[str, list[dict]] = {}
+    types: dict[str, list[dict]] = {}
+
+    for artifact in artifacts:
+        groups.setdefault(artifact["domain"], []).append(artifact)
+        phases.setdefault(artifact["adm_phase"], []).append(artifact)
+        types.setdefault(artifact["artifact_type"], []).append(artifact)
+
+    def ordered(mapping: dict[str, list[dict]]) -> list[dict]:
+        return [
+            {"name": name, "artifacts": sorted(items, key=lambda item: item["title"].lower())}
+            for name, items in sorted(mapping.items(), key=lambda item: item[0].lower())
+        ]
+
+    return {
+        "artifacts": sorted(artifacts, key=lambda item: item["title"].lower()),
+        "domains": ordered(groups),
+        "phases": ordered(phases),
+        "types": ordered(types),
+    }
+
+
 def render_wiki_markdown(
     markdown: str,
     wiki_dir: Path,
     title_map: dict[str, str] | None = None,
     pages_by_slug: dict[str, _WikiDocument] | None = None,
+    link_base_path: str = "/wiki",
 ) -> str:
     title_map = title_map or _wiki_title_map(wiki_dir)
     pages_by_slug = pages_by_slug or _wiki_documents_by_slug(_load_wiki_documents(wiki_dir))
@@ -450,7 +545,7 @@ def render_wiki_markdown(
         slug = title_map.get(slugify_wiki_title(target_title), slugify_wiki_title(target_title))
         exists = slug in pages_by_slug
         css_class = "wiki-link" if exists else "wiki-link missing"
-        return f'<a class="{css_class}" href="/wiki/{html.escape(slug)}">{html.escape(label)}</a>'
+        return f'<a class="{css_class}" href="{html.escape(link_base_path)}/{html.escape(slug)}">{html.escape(label)}</a>'
 
     rendered_lines: list[str] = []
     in_list = False

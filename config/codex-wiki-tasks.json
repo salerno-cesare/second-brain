@@ -1,0 +1,4 @@
+{
+  "compile": "Compila o aggiorna la wiki persistente partendo dalle fonti estratte. Crea nuove pagine per concetti non presenti, aggiorna quelle esistenti con nuove informazioni, aggiungi [[wiki-links]] e annota contraddizioni o incertezze.",
+  "lint": "Esegui una manutenzione della wiki esistente: controlla pagine orfane, link mancanti, concetti troppo larghi da dividere, duplicati, contraddizioni non annotate e aggiorna solo i file Markdown necessari in wiki/."
+}

@@ -1,0 +1,1 @@
+- {extracted_path} (origine: {rel_path}, chars: {chars}, truncated: {truncated})

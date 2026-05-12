@@ -56,6 +56,11 @@ Variabili principali in `.env.example`:
 - `CODEX_MODEL`
 - `CODEX_TIMEOUT_SECONDS`
 - `CODEX_SOURCE_CHAR_LIMIT`: `0` disabilita il taglio degli estratti in `knowledge/.codex_sources/`; un valore positivo impone un limite massimo di caratteri per fonte.
+- `CODEX_PROMPT_TEMPLATE`: percorso del prompt principale usato da Codex, con placeholder `{mode}`, `{task}` e `{source_list}`.
+- `CODEX_TASK_PROMPTS`: obiettivi per le modalita' `compile` e `lint`.
+- `CODEX_SOURCE_EXTRACT_TEMPLATE`: template dei file estratti in `knowledge/.codex_sources/`.
+- `CODEX_SOURCE_LIST_ITEM_TEMPLATE`: template di ogni voce fonte nel prompt principale.
+- `CODEX_SOURCE_LIST_EMPTY_TEMPLATE`: testo usato quando non ci sono fonti raw.
 
 ## Endpoint
 - `GET /`

@@ -7,8 +7,11 @@ import shutil
 import subprocess
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha1
+from os import cpu_count
 from pathlib import Path
 
 from .config import Settings
@@ -47,6 +50,15 @@ class CodexRunResult:
     sources: list[PreparedSource]
 
 
+@dataclass(frozen=True)
+class _WikiDocument:
+    page: WikiPage
+    markdown: str
+
+
+SOURCE_CACHE_VERSION = 1
+
+
 def ensure_wiki_layout(settings: Settings) -> None:
     settings.source_dir.mkdir(parents=True, exist_ok=True)
     settings.raw_dir.mkdir(parents=True, exist_ok=True)
@@ -70,44 +82,63 @@ def slugify_wiki_title(title: str) -> str:
 
 def title_from_markdown(path: Path) -> str:
     try:
-        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            stripped = line.strip()
-            if stripped.startswith("# "):
-                return stripped[2:].strip()
+        return title_from_markdown_text(path.read_text(encoding="utf-8", errors="ignore"), path.stem)
     except OSError:
-        pass
-
-    return path.stem.replace("-", " ").replace("_", " ").title()
+        return path.stem.replace("-", " ").replace("_", " ").title()
 
 
-def list_wiki_pages(wiki_dir: Path) -> list[WikiPage]:
+def title_from_markdown_text(markdown: str, fallback_slug: str) -> str:
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+
+    return fallback_slug.replace("-", " ").replace("_", " ").title()
+
+
+def _load_wiki_documents(wiki_dir: Path) -> list[_WikiDocument]:
     if not wiki_dir.exists():
         return []
 
-    pages: list[WikiPage] = []
+    documents: list[_WikiDocument] = []
     for path in sorted(wiki_dir.glob("*.md"), key=lambda item: item.name.lower()):
-        content = path.read_text(encoding="utf-8", errors="ignore")
+        markdown = path.read_text(encoding="utf-8", errors="ignore")
         stat = path.stat()
-        pages.append(
-            WikiPage(
-                slug=path.stem,
-                title=title_from_markdown(path),
-                rel_path=path.name,
-                updated_at=datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                size=stat.st_size,
-                links=len(WIKI_LINK_RE.findall(content)),
+        documents.append(
+            _WikiDocument(
+                page=WikiPage(
+                    slug=path.stem,
+                    title=title_from_markdown_text(markdown, path.stem),
+                    rel_path=path.name,
+                    updated_at=datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                    size=stat.st_size,
+                    links=len(WIKI_LINK_RE.findall(markdown)),
+                ),
+                markdown=markdown,
             )
         )
 
-    return pages
+    return documents
+
+
+def list_wiki_pages(wiki_dir: Path) -> list[WikiPage]:
+    return [document.page for document in _load_wiki_documents(wiki_dir)]
 
 
 def _wiki_title_map(wiki_dir: Path) -> dict[str, str]:
+    return _wiki_title_map_from_documents(_load_wiki_documents(wiki_dir))
+
+
+def _wiki_title_map_from_documents(documents: list[_WikiDocument]) -> dict[str, str]:
     mapping: dict[str, str] = {}
-    for page in list_wiki_pages(wiki_dir):
-        mapping[slugify_wiki_title(page.title)] = page.slug
-        mapping[slugify_wiki_title(page.slug)] = page.slug
+    for document in documents:
+        mapping[slugify_wiki_title(document.page.title)] = document.page.slug
+        mapping[slugify_wiki_title(document.page.slug)] = document.page.slug
     return mapping
+
+
+def _wiki_documents_by_slug(documents: list[_WikiDocument]) -> dict[str, _WikiDocument]:
+    return {document.page.slug: document for document in documents}
 
 
 def read_wiki_page(wiki_dir: Path, slug: str) -> tuple[WikiPage, str] | None:
@@ -126,7 +157,7 @@ def read_wiki_page(wiki_dir: Path, slug: str) -> tuple[WikiPage, str] | None:
     stat = target.stat()
     page = WikiPage(
         slug=target.stem,
-        title=title_from_markdown(target),
+        title=title_from_markdown_text(content, target.stem),
         rel_path=target.name,
         updated_at=datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
         size=stat.st_size,
@@ -135,8 +166,14 @@ def read_wiki_page(wiki_dir: Path, slug: str) -> tuple[WikiPage, str] | None:
     return page, content
 
 
-def extract_wiki_links(markdown: str, wiki_dir: Path) -> list[dict]:
-    title_map = _wiki_title_map(wiki_dir)
+def extract_wiki_links(
+    markdown: str,
+    wiki_dir: Path,
+    title_map: dict[str, str] | None = None,
+    pages_by_slug: dict[str, _WikiDocument] | None = None,
+) -> list[dict]:
+    title_map = title_map or _wiki_title_map(wiki_dir)
+    pages_by_slug = pages_by_slug or _wiki_documents_by_slug(_load_wiki_documents(wiki_dir))
     links: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
@@ -144,9 +181,9 @@ def extract_wiki_links(markdown: str, wiki_dir: Path) -> list[dict]:
         target_title = match.group(1).strip()
         label = (match.group(2) or target_title).strip()
         slug = title_map.get(slugify_wiki_title(target_title), slugify_wiki_title(target_title))
-        target = read_wiki_page(wiki_dir, slug)
+        target = pages_by_slug.get(slug)
         exists = target is not None
-        title = target[0].title if target else target_title
+        title = target.page.title if target else target_title
         key = (slug, label)
         if key in seen:
             continue
@@ -163,21 +200,28 @@ def extract_wiki_links(markdown: str, wiki_dir: Path) -> list[dict]:
     return links
 
 
-def get_wiki_backlinks(wiki_dir: Path, target_slug: str) -> list[dict]:
+def get_wiki_backlinks(
+    wiki_dir: Path,
+    target_slug: str,
+    documents: list[_WikiDocument] | None = None,
+    title_map: dict[str, str] | None = None,
+    pages_by_slug: dict[str, _WikiDocument] | None = None,
+) -> list[dict]:
+    documents = documents or _load_wiki_documents(wiki_dir)
+    title_map = title_map or _wiki_title_map_from_documents(documents)
+    pages_by_slug = pages_by_slug or _wiki_documents_by_slug(documents)
     backlinks: list[dict] = []
     safe_target_slug = Path(target_slug).name
 
-    for page in list_wiki_pages(wiki_dir):
+    for document in documents:
+        page = document.page
         if page.slug == safe_target_slug:
             continue
 
-        page_data = read_wiki_page(wiki_dir, page.slug)
-        if not page_data:
-            continue
-
-        _, markdown = page_data
         matching_links = [
-            link for link in extract_wiki_links(markdown, wiki_dir) if link["slug"] == safe_target_slug
+            link
+            for link in extract_wiki_links(document.markdown, wiki_dir, title_map, pages_by_slug)
+            if link["slug"] == safe_target_slug
         ]
         if matching_links:
             backlinks.append(
@@ -193,17 +237,20 @@ def get_wiki_backlinks(wiki_dir: Path, target_slug: str) -> list[dict]:
 
 
 def get_wiki_page_payload(wiki_dir: Path, slug: str) -> dict | None:
-    page_data = read_wiki_page(wiki_dir, slug)
-    if not page_data:
+    documents = _load_wiki_documents(wiki_dir)
+    pages_by_slug = _wiki_documents_by_slug(documents)
+    safe_slug = Path(slug).name
+    document = pages_by_slug.get(safe_slug)
+    if not document:
         return None
 
-    page, markdown = page_data
+    title_map = _wiki_title_map_from_documents(documents)
     return {
-        "page": page.__dict__,
-        "markdown": markdown,
-        "html": render_wiki_markdown(markdown, wiki_dir),
-        "outgoing": extract_wiki_links(markdown, wiki_dir),
-        "backlinks": get_wiki_backlinks(wiki_dir, page.slug),
+        "page": document.page.__dict__,
+        "markdown": document.markdown,
+        "html": render_wiki_markdown(document.markdown, wiki_dir, title_map, pages_by_slug),
+        "outgoing": extract_wiki_links(document.markdown, wiki_dir, title_map, pages_by_slug),
+        "backlinks": get_wiki_backlinks(wiki_dir, document.page.slug, documents, title_map, pages_by_slug),
     }
 
 
@@ -213,20 +260,16 @@ def search_wiki_pages(wiki_dir: Path, query: str, limit: int = 30) -> list[dict]
         return []
 
     matches: list[dict] = []
-    for page in list_wiki_pages(wiki_dir):
-        page_data = read_wiki_page(wiki_dir, page.slug)
-        if not page_data:
-            continue
-
-        _, markdown = page_data
-        haystack = f"{page.title}\n{markdown}".lower()
+    for document in _load_wiki_documents(wiki_dir):
+        page = document.page
+        haystack = f"{page.title}\n{document.markdown}".lower()
         index = haystack.find(normalized_query)
         if index < 0:
             continue
 
         snippet_start = max(index - 80, 0)
-        snippet_end = min(index + len(normalized_query) + 160, len(markdown))
-        snippet = re.sub(r"\s+", " ", markdown[snippet_start:snippet_end]).strip()
+        snippet_end = min(index + len(normalized_query) + 160, len(document.markdown))
+        snippet = re.sub(r"\s+", " ", document.markdown[snippet_start:snippet_end]).strip()
         matches.append(
             {
                 "slug": page.slug,
@@ -243,8 +286,11 @@ def search_wiki_pages(wiki_dir: Path, query: str, limit: int = 30) -> list[dict]
 
 
 def build_wiki_graph(wiki_dir: Path) -> dict:
-    pages = list_wiki_pages(wiki_dir)
+    documents = _load_wiki_documents(wiki_dir)
+    pages = [document.page for document in documents]
     known_slugs = {page.slug for page in pages}
+    title_map = _wiki_title_map_from_documents(documents)
+    pages_by_slug = _wiki_documents_by_slug(documents)
     nodes = [
         {
             "slug": page.slug,
@@ -258,13 +304,9 @@ def build_wiki_graph(wiki_dir: Path) -> dict:
     edges: list[dict] = []
     seen_edges: set[tuple[str, str]] = set()
 
-    for page in pages:
-        page_data = read_wiki_page(wiki_dir, page.slug)
-        if not page_data:
-            continue
-
-        _, markdown = page_data
-        for link in extract_wiki_links(markdown, wiki_dir):
+    for document in documents:
+        page = document.page
+        for link in extract_wiki_links(document.markdown, wiki_dir, title_map, pages_by_slug):
             target_slug = link["slug"]
             key = (page.slug, target_slug)
             if key in seen_edges:
@@ -291,14 +333,20 @@ def build_wiki_graph(wiki_dir: Path) -> dict:
     return {"nodes": nodes + list(missing_nodes.values()), "edges": edges}
 
 
-def render_wiki_markdown(markdown: str, wiki_dir: Path) -> str:
-    title_map = _wiki_title_map(wiki_dir)
+def render_wiki_markdown(
+    markdown: str,
+    wiki_dir: Path,
+    title_map: dict[str, str] | None = None,
+    pages_by_slug: dict[str, _WikiDocument] | None = None,
+) -> str:
+    title_map = title_map or _wiki_title_map(wiki_dir)
+    pages_by_slug = pages_by_slug or _wiki_documents_by_slug(_load_wiki_documents(wiki_dir))
 
     def replace_wiki_link(match: re.Match[str]) -> str:
         target_title = match.group(1).strip()
         label = (match.group(2) or target_title).strip()
         slug = title_map.get(slugify_wiki_title(target_title), slugify_wiki_title(target_title))
-        exists = (wiki_dir / f"{slug}.md").exists()
+        exists = slug in pages_by_slug
         css_class = "wiki-link" if exists else "wiki-link missing"
         return f'<a class="{css_class}" href="/wiki/{html.escape(slug)}">{html.escape(label)}</a>'
 
@@ -371,26 +419,185 @@ def _source_text_dir(settings: Settings) -> Path:
     return settings.source_dir / ".codex_sources"
 
 
-def _clear_prepared_source_files(source_text_dir: Path) -> None:
+def _remove_source_cache_entry(child: Path) -> None:
+    for attempt in range(3):
+        try:
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+            break
+        except FileNotFoundError:
+            break
+        except PermissionError:
+            if attempt == 2:
+                break
+            time.sleep(0.15)
+        except OSError:
+            break
+
+
+def _clear_stale_prepared_source_files(source_text_dir: Path, current_files: set[Path]) -> None:
     if not source_text_dir.exists():
         return
 
+    reserved_names = {"codex-prompt.txt", "codex-last-message.txt", "manifest.json"}
+    current_resolved = {path.resolve() for path in current_files}
     for child in source_text_dir.iterdir():
-        for attempt in range(3):
-            try:
-                if child.is_dir():
-                    shutil.rmtree(child)
-                else:
-                    child.unlink()
-                break
-            except FileNotFoundError:
-                break
-            except PermissionError:
-                if attempt == 2:
-                    break
-                time.sleep(0.15)
-            except OSError:
-                break
+        if child.name in reserved_names:
+            continue
+        if child.is_file() and child.resolve() in current_resolved:
+            continue
+        if child.is_file() and child.suffix.lower() != ".txt":
+            continue
+        _remove_source_cache_entry(child)
+
+
+def _load_source_manifest(source_text_dir: Path) -> dict:
+    manifest_path = source_text_dir / "manifest.json"
+    if not manifest_path.exists():
+        return {}
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if manifest.get("cache_version") != SOURCE_CACHE_VERSION:
+        return {}
+
+    return {
+        source.get("rel_path"): source
+        for source in manifest.get("sources", [])
+        if isinstance(source, dict) and source.get("rel_path")
+    }
+
+
+def _safe_source_extract_path(source_text_dir: Path, rel_path: str, source_path: Path) -> Path:
+    digest = sha1(rel_path.encode("utf-8")).hexdigest()[:10]
+    slug = slugify_wiki_title(source_path.stem)[:80]
+    return source_text_dir / f"source-{slug}-{digest}.txt"
+
+
+def _read_config_text(path: Path, label: str) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise FileNotFoundError(f"{label} non trovato o non leggibile: {path}") from exc
+
+
+def _format_config_template(template: str, values: dict, template_path: Path) -> str:
+    try:
+        return template.format(**values)
+    except KeyError as exc:
+        raise ValueError(f"Placeholder non supportato nel template {template_path}: {exc}") from exc
+
+
+def _source_cache_matches(cache_entry: dict, path: Path, extracted_path: Path, char_limit: int) -> bool:
+    if not extracted_path.exists() or not extracted_path.is_file():
+        return False
+
+    try:
+        stat = path.stat()
+    except OSError:
+        return False
+
+    return (
+        cache_entry.get("cache_version") == SOURCE_CACHE_VERSION
+        and cache_entry.get("source_size") == stat.st_size
+        and cache_entry.get("source_mtime_ns") == stat.st_mtime_ns
+        and cache_entry.get("char_limit") == char_limit
+        and Path(str(cache_entry.get("extracted_path", ""))).name == extracted_path.name
+    )
+
+
+def _prepare_single_source(
+    path: Path,
+    rel_path: str,
+    source_text_dir: Path,
+    char_limit: int,
+    source_extract_template: str,
+    source_extract_template_path: Path,
+    cache_entry: dict | None,
+) -> tuple[PreparedSource, dict, Path]:
+    extracted_path = _safe_source_extract_path(source_text_dir, rel_path, path)
+    if cache_entry and _source_cache_matches(cache_entry, path, extracted_path, char_limit):
+        chars = int(cache_entry.get("chars") or 0)
+        truncated = bool(cache_entry.get("truncated"))
+        return (
+            PreparedSource(
+                rel_path=rel_path,
+                extracted_path=extracted_path.name,
+                chars=chars,
+                truncated=truncated,
+            ),
+            cache_entry,
+            extracted_path,
+        )
+
+    try:
+        text = normalize_text(read_text_from_file(path))
+    except Exception as exc:
+        text = f"Extraction failed for {rel_path}: {exc}"
+
+    truncated = char_limit > 0 and len(text) > char_limit
+    if truncated:
+        text = text[:char_limit] + "\n\n[TRUNCATED]"
+
+    extracted_content = _format_config_template(
+        source_extract_template,
+        {
+            "rel_path": rel_path,
+            "extracted_at": datetime.now(timezone.utc).isoformat(),
+            "truncated": str(truncated).lower(),
+            "text": text,
+        },
+        source_extract_template_path,
+    )
+    extracted_path.write_text(extracted_content.rstrip() + "\n", encoding="utf-8")
+
+    stat = path.stat()
+    cache_data = {
+        "cache_version": SOURCE_CACHE_VERSION,
+        "rel_path": rel_path,
+        "extracted_path": extracted_path.name,
+        "chars": len(text),
+        "truncated": truncated,
+        "source_size": stat.st_size,
+        "source_mtime_ns": stat.st_mtime_ns,
+        "source_ext": path.suffix.lower(),
+        "char_limit": char_limit,
+    }
+    return (
+        PreparedSource(
+            rel_path=rel_path,
+            extracted_path=extracted_path.name,
+            chars=len(text),
+            truncated=truncated,
+        ),
+        cache_data,
+        extracted_path,
+    )
+
+
+def _source_worker_count(source_count: int) -> int:
+    if source_count <= 1:
+        return 1
+
+    return min(source_count, max(2, min(cpu_count() or 2, 6)))
+
+
+def _prepare_source_job(args: tuple[Path, str, Path, int, str, Path, dict | None]) -> tuple[PreparedSource, dict, Path]:
+    return _prepare_single_source(*args)
+
+
+def _prepared_source_with_relative_path(source: PreparedSource, source_root: Path, extracted_path: Path) -> PreparedSource:
+    return PreparedSource(
+        rel_path=source.rel_path,
+        extracted_path=str(extracted_path.resolve().relative_to(source_root)).replace("\\", "/"),
+        chars=source.chars,
+        truncated=source.truncated,
+    )
 
 
 def prepare_sources_for_codex(settings: Settings) -> list[PreparedSource]:
@@ -401,45 +608,58 @@ def prepare_sources_for_codex(settings: Settings) -> list[PreparedSource]:
         raise ValueError("Prepared source directory must stay inside the wiki source directory")
 
     source_text_dir.mkdir(parents=True, exist_ok=True)
-    _clear_prepared_source_files(source_text_dir)
+    cached_sources = _load_source_manifest(source_text_dir)
+    source_extract_template = _read_config_text(
+        settings.codex_source_extract_template_path,
+        "Template estrazione fonti Codex",
+    )
 
-    prepared: list[PreparedSource] = []
-    for idx, path in enumerate(sorted(settings.raw_dir.rglob("*")), start=1):
-        if not path.is_file() or not is_supported_file(path):
-            continue
-
+    source_paths = [
+        path
+        for path in sorted(settings.raw_dir.rglob("*"), key=lambda item: str(item).lower())
+        if path.is_file() and is_supported_file(path)
+    ]
+    jobs: list[tuple[Path, str, Path, int, str, Path, dict | None]] = []
+    for path in source_paths:
         rel_path = str(path.resolve().relative_to(source_root)).replace("\\", "/")
-        try:
-            text = normalize_text(read_text_from_file(path))
-        except Exception as exc:
-            text = f"Extraction failed for {rel_path}: {exc}"
-
-        truncated = settings.codex_source_char_limit > 0 and len(text) > settings.codex_source_char_limit
-        if truncated:
-            text = text[: settings.codex_source_char_limit] + "\n\n[TRUNCATED]"
-
-        safe_name = f"{idx:03d}-{slugify_wiki_title(path.stem)}.txt"
-        extracted_path = source_text_dir / safe_name
-        extracted_path.write_text(
-            f"Source: {rel_path}\n"
-            f"Extracted at: {datetime.now(timezone.utc).isoformat()}\n"
-            f"Truncated: {str(truncated).lower()}\n\n"
-            f"{text}\n",
-            encoding="utf-8",
-        )
-        prepared.append(
-            PreparedSource(
-                rel_path=rel_path,
-                extracted_path=str(extracted_path.resolve().relative_to(source_root)).replace("\\", "/"),
-                chars=len(text),
-                truncated=truncated,
+        jobs.append(
+            (
+                path,
+                rel_path,
+                source_text_dir,
+                settings.codex_source_char_limit,
+                source_extract_template,
+                settings.codex_source_extract_template_path,
+                cached_sources.get(rel_path),
             )
         )
 
+    prepared: list[PreparedSource] = []
+    manifest_sources: list[dict] = []
+    current_files: set[Path] = set()
+    worker_count = _source_worker_count(len(jobs))
+    if worker_count == 1:
+        results = [_prepare_source_job(job) for job in jobs]
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            results = list(executor.map(_prepare_source_job, jobs))
+
+    for source, cache_data, extracted_path in results:
+        current_files.add(extracted_path)
+        relative_source = _prepared_source_with_relative_path(source, source_root, extracted_path)
+        prepared.append(relative_source)
+        manifest_entry = dict(cache_data)
+        manifest_entry["extracted_path"] = relative_source.extracted_path
+        manifest_sources.append(manifest_entry)
+
+    _clear_stale_prepared_source_files(source_text_dir, current_files)
+
     manifest = {
+        "cache_version": SOURCE_CACHE_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_count": len(prepared),
-        "sources": [source.__dict__ for source in prepared],
+        "worker_count": worker_count,
+        "sources": manifest_sources,
     }
     (source_text_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return prepared
@@ -491,87 +711,58 @@ def move_raw_sources_to_processed(raw_dir: Path) -> tuple[int, list[str]]:
     return moved_count, errors
 
 
-def build_codex_prompt(settings: Settings, mode: str, sources: list[PreparedSource]) -> str:
-    source_list = "\n".join(
-        f"- {source.extracted_path} (origine: {source.rel_path}, chars: {source.chars}, truncated: {source.truncated})"
-        for source in sources
+def _load_codex_task_prompt(settings: Settings, mode: str) -> str:
+    raw_tasks = _read_config_text(settings.codex_task_prompts_path, "Prompt task Codex")
+    try:
+        tasks = json.loads(raw_tasks)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Prompt task Codex non valido: {settings.codex_task_prompts_path}") from exc
+
+    task = tasks.get(mode)
+    if not isinstance(task, str) or not task.strip():
+        raise ValueError(f"Task prompt mancante per mode={mode}: {settings.codex_task_prompts_path}")
+
+    return task.strip()
+
+
+def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str:
+    if not sources:
+        return _read_config_text(
+            settings.codex_source_list_empty_template_path,
+            "Template lista fonti vuota Codex",
+        ).strip()
+
+    item_template = _read_config_text(
+        settings.codex_source_list_item_template_path,
+        "Template voce lista fonti Codex",
     )
-    if not source_list:
-        source_list = "- Nessuna fonte disponibile in raw/."
+    items = [
+        _format_config_template(
+            item_template,
+            {
+                "extracted_path": source.extracted_path,
+                "rel_path": source.rel_path,
+                "chars": source.chars,
+                "truncated": source.truncated,
+            },
+            settings.codex_source_list_item_template_path,
+        ).strip()
+        for source in sources
+    ]
+    return "\n".join(items)
 
-    if mode == "lint":
-        task = (
-            "Esegui una manutenzione della wiki esistente: controlla pagine orfane, link mancanti, "
-            "concetti troppo larghi da dividere, duplicati, contraddizioni non annotate e aggiorna "
-            "solo i file Markdown necessari in wiki/."
-        )
-    else:
-        task = (
-            "Compila o aggiorna la wiki persistente partendo dalle fonti estratte. Crea nuove pagine "
-            "per concetti non presenti, aggiorna quelle esistenti con nuove informazioni, aggiungi "
-            "[[wiki-links]] e annota contraddizioni o incertezze."
-        )
 
-    return f"""Sei Codex usato come LLM manutentore di una LLM Wiki locale.
-
-Obiettivo:
-{task}
-
-Cartelle, relative alla working directory:
-- raw/: fonti originali caricate dall'utente. Non modificarle.
-- .codex_sources/: testo estratto dalle fonti per facilitare la lettura. Non modificarlo.
-- wiki/: knowledge base Markdown da creare e mantenere. Scrivi solo qui.
-
-Fonti preparate:
-{source_list}
-
-Best practice obbligatorie per la LLM Wiki:
-1. La wiki e' incrementale: prima preserva e migliora la struttura esistente, poi aggiungi nuove pagine solo se servono davvero.
-2. Ogni pagina deve essere atomica: un solo concetto, processo, entita, decisione, progetto o persona. Se una pagina copre piu' temi distinti, dividila.
-3. Evita duplicati semantici: se due pagine parlano della stessa cosa con titoli diversi, convergile in una pagina canonica e aggiorna i link.
-4. Non inventare fatti. Scrivi solo informazioni supportate dalle fonti o gia' presenti nella wiki. Se un'inferenza e' utile ma non certa, etichettala come dubbio o ipotesi.
-5. Mantieni chiara separazione tra fatti, interpretazioni e incertezze.
-6. Preferisci testo denso ma leggibile: frasi brevi, sezioni stabili, niente marketing, niente ripetizioni inutili.
-7. Usa nomi file in kebab-case ASCII, stabili e descrittivi, per esempio transformer-architecture.md.
-8. Il titolo H1 puo' essere piu' naturale del file name, ma deve identificare chiaramente il concetto canonico della pagina.
-9. Ogni pagina deve avere almeno questa struttura minima:
-   # Titolo
-   ## Sintesi
-   ## Dettagli
-   ## Collegamenti
-   ## Contraddizioni o dubbi
-   ## Fonti
-10. In ## Sintesi scrivi 2-5 bullet o un paragrafo breve che permetta di capire subito perche' la pagina esiste.
-11. In ## Dettagli organizza l'informazione in sottosezioni brevi e orientate al recupero: contesto, responsabilita, flusso, decisioni, dati chiave, esempi.
-12. In ## Collegamenti usa link wiki in stile Obsidian come [[Nome Concetto]] e crea collegamenti espliciti verso pagine correlate, prerequisiti, componenti dipendenti e concetti superiori/inferiori.
-13. Ogni pagina nuova o sostanzialmente aggiornata deve avere almeno un link uscente sensato; quando possibile evita pagine orfane anche in ingresso.
-14. Se un concetto citato ricorre piu' volte o ha valore autonomo, crea o aggiorna una pagina dedicata invece di lasciarlo sepolto in una pagina piu' ampia.
-15. Se una pagina e' troppo breve e senza autonomia semantica, integrala in una pagina piu' adatta invece di moltiplicare note deboli.
-16. Mantieni wiki/_index.md come indice curatoriale della knowledge base: raggruppa le pagine per aree tematiche e aggiungi una descrizione breve e utile per ciascuna voce o gruppo.
-17. Mantieni wiki/_log.md come log operativo append-only con data/ora, modalita' del run, fonti considerate, pagine create, pagine aggiornate, pagine unite/divise e dubbi aperti.
-18. Nella sezione ## Fonti cita sempre i file sorgente rilevanti usando percorsi o nomi espliciti; se una pagina deriva anche da wiki preesistente, indicalo brevemente.
-19. Se una fonte contraddice contenuto esistente, non cancellare il conflitto: registralo in ## Contraddizioni o dubbi, specificando quali fonti o pagine sono in tensione.
-20. Se le fonti non bastano per una conclusione affidabile, conserva una pagina minima ma utile, dichiarando il gap informativo invece di riempirlo con testo speculativo.
-21. Mantieni coerenza lessicale: scegli un nome canonico per entita, ruoli, progetti e acronimi; usa varianti e alias nel testo solo se aiutano il recupero.
-22. Quando utile, aggiungi cross-link anche per persone, clienti, progetti, capability, deliverable, strumenti, metriche e dipendenze tecniche.
-23. Non riscrivere l'intera wiki senza motivo: modifica solo i file Markdown necessari per ottenere un miglioramento netto e verificabile.
-24. Non modificare codice applicativo, database, raw/ o .codex_sources/.
-
-Procedura di lavoro obbligatoria:
-1. Leggi prima .codex_sources/manifest.json, poi le fonti in .codex_sources/, poi le pagine gia' presenti in wiki/ rilevanti per i concetti trovati.
-2. Identifica i concetti canonici, le entita nominate, le relazioni e gli eventuali conflitti o sovrapposizioni.
-3. Decidi per ogni concetto se creare, aggiornare, unire, dividere o lasciare invariata una pagina esistente.
-4. Aggiorna sempre anche _index.md e _log.md se il contenuto della wiki cambia.
-5. Prima di concludere, controlla: naming coerente, sezioni minime presenti, link sensati, fonti esplicite, nessuna affermazione importante senza supporto.
-
-Criteri specifici per questa esecuzione:
-- Se mode = compile: privilegia copertura incrementale, nuove pagine utili e consolidamento della rete di link.
-- Se mode = lint: privilegia qualita' editoriale e strutturale, senza introdurre contenuto non supportato dalle fonti.
-
-Output finale richiesto:
-- Rispondi con un riepilogo breve ma concreto di pagine create, aggiornate, unite o divise.
-- Elenca i dubbi residui, le contraddizioni aperte e le aree che richiedono ulteriori fonti.
-"""
+def build_codex_prompt(settings: Settings, mode: str, sources: list[PreparedSource]) -> str:
+    template = _read_config_text(settings.codex_prompt_template_path, "Prompt template Codex")
+    return _format_config_template(
+        template,
+        {
+            "mode": mode,
+            "task": _load_codex_task_prompt(settings, mode),
+            "source_list": _build_source_list(settings, sources),
+        },
+        settings.codex_prompt_template_path,
+    )
 
 
 def _ps_quote(value: str | Path) -> str:

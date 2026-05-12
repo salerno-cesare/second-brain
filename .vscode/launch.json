@@ -1,0 +1,47 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "LLM Wiki: locale FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--reload-dir",
+        "app",
+        "--reload-include",
+        "*.py",
+        "--reload-include",
+        "*.html",
+        "--reload-include",
+        "*.css",
+        "--reload-include",
+        "*.js",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "jinja": true,
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "preLaunchTask": "App: prepare launch",
+      "env": {
+        "WIKI_SOURCE_DIR": "${workspaceFolder}\\knowledge",
+        "WIKI_RAW_DIR": "${workspaceFolder}\\knowledge\\raw",
+        "WIKI_OUTPUT_DIR": "${workspaceFolder}\\knowledge\\wiki",
+        "CODEX_COMMAND": "codex.cmd",
+        "CODEX_SHELL": "powershell",
+        "APP_HOST": "127.0.0.1",
+        "APP_PORT": "8000",
+        "PYTHONPATH": "${workspaceFolder}",
+        "PYTHONUNBUFFERED": "1",
+        "WATCHFILES_FORCE_POLLING": "true"
+      }
+    }
+  ]
+}

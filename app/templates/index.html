@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="obsidian-shell" data-initial-slug="{{ initial_slug }}">
+  <aside class="vault-sidebar">
+    <div class="vault-title">
+      <span>Vault</span>
+      <span class="count-pill">{{ wiki_pages | length }}</span>
+    </div>
+
+    <a class="manage-link" href="/sources">Apri gestione file raw</a>
+
+    <input id="vault-search" class="vault-search" type="search" placeholder="Cerca note" autocomplete="off" />
+    <nav id="page-list" class="note-list" aria-label="Pagine wiki">
+      {% for page in wiki_pages %}
+      <button class="note-item" type="button" data-slug="{{ page.slug }}" data-title="{{ page.title }}">
+        <span>{{ page.title }}</span>
+        <small>{{ page.links }}</small>
+      </button>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <section class="note-pane">
+    <div class="tab-bar">
+      <button id="active-tab" class="tab active" type="button">Nessuna nota</button>
+      <div id="note-meta" class="note-meta"></div>
+    </div>
+    <article id="note-content" class="note-content wiki-content">
+      <div class="empty-note">Seleziona una nota dal vault.</div>
+    </article>
+  </section>
+
+  <aside class="inspector-sidebar">
+    <section class="inspector-section">
+      <h2>Backlinks</h2>
+      <ul id="backlink-list" class="link-list"></ul>
+    </section>
+    <section class="inspector-section">
+      <h2>Outlinks</h2>
+      <ul id="outlink-list" class="link-list"></ul>
+    </section>
+    <section class="inspector-section graph-section">
+      <h2>Graph</h2>
+      <svg id="wiki-graph" viewBox="0 0 320 240" role="img" aria-label="Wiki graph"></svg>
+    </section>
+  </aside>
+</div>
+
+<script src="/static/app.js?v=obsidian"></script>
+{% endblock %}

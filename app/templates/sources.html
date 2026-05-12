@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel sources-panel">
+  <div class="panel-header">
+    <h1>Gestione sorgenti</h1>
+    <a class="manage-link" href="/">Torna alla wiki</a>
+  </div>
+  <p class="panel-subtitle">Carica in raw/, compila la knowledge base e consulta anche lo storico spostato in processed/.</p>
+
+  <div class="upload-card">
+    <div class="upload-stack">
+      <form id="upload-form" class="upload-row" enctype="multipart/form-data">
+        <input type="file" name="file" required />
+        <button type="submit">Upload</button>
+      </form>
+      <p id="upload-result" class="status-line"></p>
+
+      <form id="text-upload-form" class="text-upload-form">
+        <input type="text" name="title" placeholder="Nome sorgente" maxlength="120" />
+        <textarea name="text" rows="7" placeholder="Testo libero" required></textarea>
+        <button type="submit">Carica testo</button>
+      </form>
+      <p id="text-upload-result" class="status-line"></p>
+    </div>
+
+    <div class="button-row compact">
+      <button type="button" id="compile-wiki">Compila</button>
+      <button type="button" id="lint-wiki" class="secondary">Lint</button>
+    </div>
+    <p id="codex-status" class="status-line">{{ codex_state.message }}</p>
+    <p class="hint-line">CLI: {{ codex_command }} via {{ codex_shell }}</p>
+  </div>
+
+  <div class="source-sections-grid">
+    <section class="raw-list-section">
+      <div class="vault-title">
+        <span>File in raw/</span>
+        <span id="source-count" class="count-pill">{{ source_files | length }}</span>
+      </div>
+      <ul id="source-list" class="source-list source-list-wide">
+        {% for source in source_files %}
+        <li title="{{ source.rel_path }}" data-rel-path="{{ source.rel_path }}">
+          <div class="source-meta">
+            <span>{{ source.name }}</span>
+            <small>{{ source.rel_path }} | {{ source.updated_at }} | {{ source.size }} bytes</small>
+          </div>
+          <button type="button" class="danger js-delete-source">Cancella</button>
+        </li>
+        {% else %}
+        <li class="source-empty">Nessun file presente in raw/.</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="raw-list-section processed-list-section">
+      <div class="vault-title">
+        <span>File in processed/</span>
+        <span id="processed-count" class="count-pill">{{ processed_files | length }}</span>
+      </div>
+      <ul id="processed-list" class="source-list source-list-wide">
+        {% for source in processed_files %}
+        <li title="{{ source.rel_path }}" data-rel-path="{{ source.rel_path }}">
+          <div class="source-meta">
+            <span>{{ source.name }}</span>
+            <small>{{ source.rel_path }} | {{ source.updated_at }} | {{ source.size }} bytes</small>
+          </div>
+          <button type="button" class="secondary js-restore-source">Riporta in raw</button>
+        </li>
+        {% else %}
+        <li class="source-empty">Nessun file ancora archiviato in processed/.</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</section>
+
+<script src="/static/sources.js?v=raw-page-text"></script>
+{% endblock %}

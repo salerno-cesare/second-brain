@@ -1,0 +1,24 @@
+﻿services:
+  llm-wiki:
+    container_name: llm-wiki
+    image: llm-wiki:local
+    build:
+      context: .
+      dockerfile: Containerfile
+    environment:
+      WIKI_SOURCE_DIR: /app/knowledge
+      WIKI_RAW_DIR: /app/knowledge/raw
+      WIKI_OUTPUT_DIR: /app/knowledge/wiki
+      CODEX_COMMAND: codex
+      CODEX_SHELL: powershell
+      CODEX_MODEL: ""
+      CODEX_TIMEOUT_SECONDS: "900"
+      CODEX_SOURCE_CHAR_LIMIT: "0"
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8000"
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - ./knowledge:/app/knowledge
+    restart: unless-stopped
+

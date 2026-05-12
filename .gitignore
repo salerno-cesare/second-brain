@@ -1,0 +1,27 @@
+﻿.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+node_modules/
+dist/
+build/
+.next/
+
+.vscode/
+.idea/
+
+*.log
+
+# Local knowledge base content is intentionally not versioned.
+knowledge/raw/*
+!knowledge/raw/.gitkeep
+knowledge/processed/*
+!knowledge/processed/.gitkeep
+knowledge/wiki/*
+!knowledge/wiki/.gitkeep
+knowledge/.codex_sources/
+data/*
+!data/.gitkeep

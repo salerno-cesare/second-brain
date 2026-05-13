@@ -13,6 +13,7 @@ Cartelle, relative alla working directory:
 - .codex_sources/: testo estratto dalle fonti per facilitare la lettura. Non modificarlo.
 - wiki/: knowledge base Markdown da creare e mantenere. Scrivi solo qui.
 - wiki/togaf/: wiki alternativa Markdown da creare e mantenere come raccolta di deliverable TOGAF utilizzabili, derivati dalla LLM Wiki principale.
+- wiki/requisiti-funzionali/: wiki parallela Markdown da creare e mantenere come indice esclusivo dei requisiti software funzionali, derivati dalla LLM Wiki principale e dalle fonti della compilazione.
 
 Fonti preparate:
 {source_list}
@@ -21,7 +22,7 @@ Struttura artefatti TOGAF di riferimento:
 {togaf_reference}
 
 Regole di scope per modalita':
-- Se mode = compile: aggiorna solo la LLM Wiki principale in wiki/ e non creare, aggiornare o riscrivere wiki/togaf/.
+- Se mode = compile: aggiorna la LLM Wiki principale in wiki/ e aggiorna anche wiki/requisiti-funzionali/ con soli requisiti software funzionali. Non creare, aggiornare o riscrivere wiki/togaf/.
 - Se mode = togaf: usa la LLM Wiki principale in wiki/ come fonte informativa primaria e vincolante. Parti da wiki/_index.md, poi wiki/_log.md, poi le pagine wiki rilevanti. Non usare raw/ o .codex_sources/ come fonte primaria e non modificare le pagine della wiki principale. Usa la tua capacita' di sintesi e strutturazione per produrre documenti TOGAF leggibili e utilizzabili, ma non inventare fatti assenti dalla LLM Wiki.
 - Se mode = lint: applica manutenzione editoriale e strutturale alle aree indicate dal task, senza introdurre contenuto non supportato.
 
@@ -82,15 +83,47 @@ Regole obbligatorie per la wiki alternativa TOGAF, da applicare solo se mode = t
 14. Usa esattamente le fasi presenti nella reference: Preliminary Phase, Phase A - Architecture Vision, Phase B - Business Architecture, Phase C - Information Systems Architecture, Phase D - Technology Architecture, Phase E - Opportunities and Solutions, Phase F - Migration Planning, Phase G - Implementation Governance, Phase H - Architecture Change Management.
 15. Se la wiki principale non consente di popolare un deliverable di riferimento, crea o mantieni una pagina parziale solo quando utile e registra chiaramente il gap; altrimenti elenca il deliverable come non popolato nell'indice TOGAF.
 
+Regole obbligatorie per la wiki parallela dei requisiti funzionali, da applicare se mode = compile o lint:
+1. Mantieni wiki/requisiti-funzionali/_index.md come indice navigabile solo dei requisiti software funzionali, ordinato secondo la gerarchia progetto > epica > user story. Il livello progetto deve essere presente solo quando supportato dalla LLM Wiki principale o dalle fonti della compilazione.
+2. Mantieni wiki/requisiti-funzionali/_log.md come log append-only delle modifiche alla vista requisiti funzionali.
+3. Non inserire in wiki/requisiti-funzionali/ contenuti di dominio generici, architettura, processi, decisioni commerciali, stime, vincoli tecnici o note operative se non sono formulabili come requisiti funzionali dell'applicazione.
+4. Ogni requisito deve essere tracciabile a una o piu' pagine della LLM Wiki principale o alle fonti preparate della compilazione. Se il requisito non e' supportato, non crearlo.
+5. Usa una pagina per ogni epica e una pagina per ogni user story utile. I nomi file devono essere kebab-case ASCII e stabili.
+6. Ogni pagina epica deve iniziare con:
+   # Titolo
+   ## Metadati Requisiti
+   - Tipo requisito: Epica
+   - Epica: <nome epica>
+   - Priorita: Alta | Media | Bassa | Non indicata
+   - Stato: Completo | Parziale | Da verificare
+   - Fase: <fase se presente, altrimenti Non indicata>
+   - Fonte wiki: <link o pagina sorgente principale>
+7. Ogni pagina user story deve iniziare con:
+   # Titolo
+   ## Metadati Requisiti
+   - Tipo requisito: User story
+   - Epica: <nome epica>
+   - Priorita: Alta | Media | Bassa | Non indicata
+   - Stato: Completo | Parziale | Da verificare
+   - Fase: <fase se presente, altrimenti Non indicata>
+   - Fonte wiki: <link o pagina sorgente principale>
+8. Ogni pagina user story deve avere sezioni stabili: ## Descrizione, ## User story, ## Criteri di accettazione, ## Regole funzionali, ## Dipendenze, ## Dubbi aperti, ## Fonti.
+9. La sezione ## User story deve usare il formato "Come <attore>, voglio <azione/capacita>, cosi da <beneficio>" solo se attore, azione e beneficio sono supportati. Se manca una parte, scrivi "Non documentato nella LLM Wiki" invece di inventarla.
+10. I criteri di accettazione devono essere verificabili e derivati da fatti espliciti. Preferisci formato Given/When/Then quando la fonte consente condizioni chiare; altrimenti usa bullet sintetici e segnala il gap.
+11. Le epiche devono collegare le proprie user story con link interni in formato [[slug|Titolo]]. Le user story devono linkare l'epica e le pagine della wiki principale usate come fonte.
+12. Se una pagina della wiki principale contiene requisiti misti a contesto non funzionale, estrai solo la parte funzionale nella vista requisiti e lascia fuori il resto.
+13. Se una compilazione successiva aggiorna o chiarisce un requisito, aggiorna la pagina esistente invece di crearne una duplicata. Se un requisito diventa ambiguo, registra il dubbio nella pagina e in _log.md.
+14. Se non emergono requisiti funzionali dalle nuove fonti o dalla wiki aggiornata, non creare requisiti artificiali; aggiorna _log.md indicando che non sono stati rilevati nuovi requisiti funzionali.
+
 Procedura di lavoro obbligatoria:
 1. Se mode = compile o lint, leggi prima .codex_sources/manifest.json, poi le fonti in .codex_sources/, poi le pagine gia' presenti in wiki/ rilevanti per i concetti trovati. Se mode = togaf, leggi prima wiki/_index.md, poi wiki/_log.md, poi le pagine della wiki principale rilevanti.
 2. Identifica i concetti canonici, le entita nominate, le relazioni e gli eventuali conflitti o sovrapposizioni.
 3. Decidi per ogni concetto se creare, aggiornare, unire, dividere o lasciare invariata una pagina esistente.
-4. Aggiorna sempre anche _index.md e _log.md se il contenuto della wiki principale cambia. Se mode = togaf, aggiorna wiki/togaf/_index.md e wiki/togaf/_log.md.
+4. Aggiorna sempre anche _index.md e _log.md se il contenuto della wiki principale cambia. Se mode = compile, aggiorna anche wiki/requisiti-funzionali/_index.md e wiki/requisiti-funzionali/_log.md. Se mode = togaf, aggiorna wiki/togaf/_index.md e wiki/togaf/_log.md.
 5. Prima di concludere, controlla: naming coerente, sezioni minime presenti, link sensati, fonti esplicite, nessuna affermazione importante senza supporto.
 
 Criteri specifici per questa esecuzione:
-- Se mode = compile: privilegia copertura incrementale, nuove pagine utili e consolidamento della rete di link.
+- Se mode = compile: privilegia copertura incrementale, nuove pagine utili e consolidamento della rete di link; inoltre aggiorna la vista requisiti funzionali con indice progetto > epica > user story, epiche, user story, descrizioni e criteri di accettazione supportati.
 - Se mode = togaf: privilegia documenti TOGAF concretamente riutilizzabili, con contenuto narrativo e strutturato, mantenendo tracciabilita' dagli artefatti TOGAF alle pagine della LLM Wiki principale.
 - Se mode = lint: privilegia qualita' editoriale e strutturale, senza introdurre contenuto non supportato dalle fonti.
 

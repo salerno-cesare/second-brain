@@ -13,6 +13,7 @@
       <nav class="top-nav" aria-label="Navigazione principale">
         <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Wiki</a>
         <a href="/togaf" class="{% if request.url.path.startswith('/togaf') %}active{% endif %}">TOGAF</a>
+        <a href="/requirements" class="{% if request.url.path.startswith('/requirements') %}active{% endif %}">Requisiti</a>
         <a href="/sources" class="{% if request.url.path.startswith('/sources') %}active{% endif %}">Gestione raw</a>
       </nav>
       <p class="subtitle">Vault Markdown compilato da Codex CLI.</p>

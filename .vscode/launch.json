@@ -28,8 +28,14 @@
       "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
       "jinja": true,
       "console": "integratedTerminal",
+      "subProcess": true,
       "justMyCode": true,
       "preLaunchTask": "App: prepare launch",
+      "serverReadyAction": {
+        "pattern": "Uvicorn running on (http://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      },
       "env": {
         "WIKI_SOURCE_DIR": "${workspaceFolder}\\knowledge",
         "WIKI_RAW_DIR": "${workspaceFolder}\\knowledge\\raw",

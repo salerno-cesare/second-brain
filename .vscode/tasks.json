@@ -37,8 +37,7 @@
       "label": "App: prepare launch",
       "dependsOrder": "sequence",
       "dependsOn": [
-        "App: ensure venv",
-        "App: open Chrome"
+        "App: ensure venv"
       ],
       "problemMatcher": []
     },

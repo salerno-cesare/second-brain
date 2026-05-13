@@ -22,6 +22,10 @@ TOGAF_META_RE = re.compile(
     r"^-\s*(Fase ADM|Dominio architetturale|Tipo artefatto|Template di riferimento|Stato contenuto):\s*(.+?)\s*$",
     re.MULTILINE | re.IGNORECASE,
 )
+FUNCTIONAL_REQUIREMENT_META_RE = re.compile(
+    r"^-\s*(Tipo requisito|Epica|Priorita|Stato|Fase|Fonte wiki):\s*(.+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,7 @@ class _WikiDocument:
 SOURCE_CACHE_VERSION = 1
 WIKI_CONFIG_FILE = "_config.md"
 TOGAF_WIKI_DIR_NAME = "togaf"
+FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME = "requisiti-funzionali"
 WIKI_LANGUAGE_RE = re.compile(r"^-\s*Codice lingua:\s*([a-z]{2})\s*$", re.MULTILINE)
 TOGAF_PHASE_ORDER = [
     "Preliminary Phase",
@@ -210,6 +215,29 @@ def ensure_togaf_layout(settings: Settings) -> None:
         togaf_log_path.write_text(
             "# Log operativo TOGAF\n\n"
             "Questo log traccia le modifiche alla wiki alternativa TOGAF.\n",
+            encoding="utf-8",
+        )
+
+
+def ensure_functional_requirements_layout(settings: Settings) -> None:
+    requirements_dir = settings.wiki_dir / FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME
+    requirements_dir.mkdir(parents=True, exist_ok=True)
+
+    requirements_index_path = requirements_dir / "_index.md"
+    if not requirements_index_path.exists():
+        requirements_index_path.write_text(
+            "# Indice Requisiti Funzionali\n\n"
+            "Questa wiki parallela indicizza solo requisiti software funzionali, organizzati in epiche e user story.\n\n"
+            "## Epiche\n\n"
+            "- Nessun requisito funzionale ancora generato.\n",
+            encoding="utf-8",
+        )
+
+    requirements_log_path = requirements_dir / "_log.md"
+    if not requirements_log_path.exists():
+        requirements_log_path.write_text(
+            "# Log operativo Requisiti Funzionali\n\n"
+            "Questo log traccia le modifiche alla wiki parallela dei requisiti funzionali.\n",
             encoding="utf-8",
         )
 
@@ -474,6 +502,20 @@ def get_togaf_page_payload(wiki_dir: Path, slug: str) -> dict | None:
     return payload
 
 
+def get_functional_requirements_page_payload(wiki_dir: Path, slug: str) -> dict | None:
+    payload = get_wiki_page_payload(
+        wiki_dir,
+        slug,
+        link_base_path="/requirements",
+        fallback_wiki_dir=wiki_dir.parent,
+        fallback_link_base_path="/wiki",
+    )
+    if not payload:
+        return None
+    payload["requirement"] = extract_functional_requirement_metadata(payload["markdown"], payload["page"])
+    return payload
+
+
 def search_wiki_pages(wiki_dir: Path, query: str, limit: int = 30) -> list[dict]:
     normalized_query = query.strip().lower()
     if not normalized_query:
@@ -586,6 +628,41 @@ def extract_togaf_metadata(markdown: str, page: dict | WikiPage) -> dict:
     return metadata
 
 
+def extract_functional_requirement_metadata(markdown: str, page: dict | WikiPage) -> dict:
+    metadata = {
+        "requirement_type": "Requisito",
+        "epic": "Non classificata",
+        "priority": "Non indicata",
+        "status": "Da verificare",
+        "phase": "Non indicata",
+        "wiki_source": "Non indicata",
+    }
+    label_map = {
+        "tipo requisito": "requirement_type",
+        "epica": "epic",
+        "priorita": "priority",
+        "stato": "status",
+        "fase": "phase",
+        "fonte wiki": "wiki_source",
+    }
+    for match in FUNCTIONAL_REQUIREMENT_META_RE.finditer(markdown):
+        key = label_map.get(match.group(1).strip().lower())
+        if key:
+            metadata[key] = match.group(2).strip()
+
+    if isinstance(page, WikiPage):
+        metadata["slug"] = page.slug
+        metadata["title"] = page.title
+        metadata["rel_path"] = page.rel_path
+        metadata["links"] = page.links
+    else:
+        metadata["slug"] = page.get("slug", "")
+        metadata["title"] = page.get("title", "")
+        metadata["rel_path"] = page.get("rel_path", "")
+        metadata["links"] = page.get("links", 0)
+    return metadata
+
+
 def list_togaf_artifacts(togaf_dir: Path) -> dict:
     documents = _load_wiki_documents(togaf_dir)
     artifacts = [
@@ -614,6 +691,36 @@ def list_togaf_artifacts(togaf_dir: Path) -> dict:
         "domains": ordered(groups),
         "phases": ordered(phases, TOGAF_PHASE_ORDER),
         "types": ordered(types),
+    }
+
+
+def list_functional_requirements(requirements_dir: Path) -> dict:
+    documents = _load_wiki_documents(requirements_dir)
+    requirements = [
+        extract_functional_requirement_metadata(document.markdown, document.page)
+        for document in documents
+        if not document.page.slug.startswith("_")
+    ]
+    epics: dict[str, list[dict]] = {}
+    types: dict[str, list[dict]] = {}
+    statuses: dict[str, list[dict]] = {}
+
+    for requirement in requirements:
+        epics.setdefault(requirement["epic"], []).append(requirement)
+        types.setdefault(requirement["requirement_type"], []).append(requirement)
+        statuses.setdefault(requirement["status"], []).append(requirement)
+
+    def ordered(mapping: dict[str, list[dict]]) -> list[dict]:
+        return [
+            {"name": name, "requirements": sorted(items, key=lambda item: item["title"].lower())}
+            for name, items in sorted(mapping.items(), key=lambda item: item[0].lower())
+        ]
+
+    return {
+        "requirements": sorted(requirements, key=lambda item: item["title"].lower()),
+        "epics": ordered(epics),
+        "types": ordered(types),
+        "statuses": ordered(statuses),
     }
 
 
@@ -1126,6 +1233,8 @@ def run_codex_wiki_job(
         ensure_togaf_layout(settings)
         sources = []
     else:
+        if mode == "compile":
+            ensure_functional_requirements_layout(settings)
         sources = prepare_sources_for_codex(settings)
 
     if mode == "compile" and not sources:
@@ -1202,13 +1311,16 @@ def run_codex_wiki_job(
             ok = False
             returncode = 3
             message = (
-                "Codex ha aggiornato la wiki, ma lo spostamento in processed/ e' incompleto. "
+                "Codex ha aggiornato la wiki e i requisiti funzionali, ma lo spostamento in processed/ e' incompleto. "
                 f"File spostati: {moved_count}, errori: {len(move_errors)}."
             )
             details = "\n".join(move_errors)
             stderr = (stderr + "\n\n" if stderr else "") + f"Errori spostamento in processed/:\n{details}"
         else:
-            message = f"Codex ha aggiornato la wiki e spostato {moved_count} file in processed/."
+            message = (
+                "Codex ha aggiornato la wiki, la vista requisiti funzionali "
+                f"e spostato {moved_count} file in processed/."
+            )
     elif ok and mode == "togaf":
         message = "Codex ha aggiornato la wiki TOGAF partendo dalla LLM Wiki."
     else:

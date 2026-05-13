@@ -17,11 +17,15 @@ from .config import get_settings
 from .ingest import is_supported_file, list_source_files
 from .wiki import (
     CodexRunResult,
+    FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME,
     TOGAF_WIKI_DIR_NAME,
     build_wiki_graph,
+    ensure_functional_requirements_layout,
     ensure_wiki_layout,
+    get_functional_requirements_page_payload,
     get_togaf_page_payload,
     get_wiki_page_payload,
+    list_functional_requirements,
     list_togaf_artifacts,
     list_wiki_pages,
     read_wiki_page,
@@ -63,6 +67,7 @@ class CodexJobRequest(BaseModel):
 @app.on_event("startup")
 def startup_event() -> None:
     ensure_wiki_layout(settings)
+    ensure_functional_requirements_layout(settings)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -106,6 +111,10 @@ def _togaf_dir() -> Path:
     return settings.wiki_dir / TOGAF_WIKI_DIR_NAME
 
 
+def _requirements_dir() -> Path:
+    return settings.wiki_dir / FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME
+
+
 @app.get("/togaf", response_class=HTMLResponse)
 def togaf_home(request: Request):
     togaf_pages = list_wiki_pages(_togaf_dir())
@@ -116,6 +125,25 @@ def togaf_home(request: Request):
             "request": request,
             "togaf_pages": togaf_pages,
             "togaf_artifacts": list_togaf_artifacts(_togaf_dir()),
+            "initial_slug": initial_slug,
+        },
+    )
+
+
+@app.get("/requirements", response_class=HTMLResponse)
+def requirements_home(request: Request):
+    requirements_pages = list_wiki_pages(_requirements_dir())
+    initial_slug = (
+        "_index"
+        if any(page.slug == "_index" for page in requirements_pages)
+        else (requirements_pages[0].slug if requirements_pages else "")
+    )
+    return templates.TemplateResponse(
+        "requirements.html",
+        {
+            "request": request,
+            "requirements_pages": requirements_pages,
+            "requirements_index": list_functional_requirements(_requirements_dir()),
             "initial_slug": initial_slug,
         },
     )
@@ -133,6 +161,13 @@ def togaf_detail(slug: str):
     if not read_wiki_page(_togaf_dir(), slug):
         raise HTTPException(status_code=404, detail="TOGAF artifact not found")
     return RedirectResponse(url=f"/togaf#{quote(slug)}")
+
+
+@app.get("/requirements/{slug}")
+def requirements_detail(slug: str):
+    if not read_wiki_page(_requirements_dir(), slug):
+        raise HTTPException(status_code=404, detail="Functional requirement not found")
+    return RedirectResponse(url=f"/requirements#{quote(slug)}")
 
 
 @app.get("/api/sources")
@@ -259,6 +294,34 @@ def api_togaf_artifacts():
     return JSONResponse(content=list_togaf_artifacts(_togaf_dir()))
 
 
+@app.get("/api/requirements/pages")
+def api_requirements_pages():
+    return JSONResponse(content={"pages": [page.__dict__ for page in list_wiki_pages(_requirements_dir())]})
+
+
+@app.get("/api/requirements/page/{slug}")
+def api_requirements_page(slug: str):
+    payload = get_functional_requirements_page_payload(_requirements_dir(), slug)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Functional requirement not found")
+    return JSONResponse(content=payload)
+
+
+@app.get("/api/requirements/search")
+def api_requirements_search(q: str = Query(default="", max_length=120)):
+    return JSONResponse(content={"query": q, "results": search_wiki_pages(_requirements_dir(), q)})
+
+
+@app.get("/api/requirements/graph")
+def api_requirements_graph():
+    return JSONResponse(content=build_wiki_graph(_requirements_dir()))
+
+
+@app.get("/api/requirements/index")
+def api_requirements_index():
+    return JSONResponse(content=list_functional_requirements(_requirements_dir()))
+
+
 @app.get("/api/wiki/status")
 def api_wiki_status():
     configured_language = get_configured_wiki_language(settings.wiki_dir)
@@ -279,11 +342,12 @@ def _run_codex_background(mode: str, language: str) -> None:
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
-    start_message = (
-        "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
-        if mode == "togaf"
-        else "Codex sta compilando la wiki dalla shell locale..."
-    )
+    if mode == "togaf":
+        start_message = "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
+    elif mode == "compile":
+        start_message = "Codex sta compilando la wiki e i requisiti funzionali dalla shell locale..."
+    else:
+        start_message = "Codex sta eseguendo manutenzione sulla wiki dalla shell locale..."
     _set_codex_state(
         running=True,
         mode=mode,
@@ -331,11 +395,12 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
-    start_message = (
-        "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
-        if mode == "togaf"
-        else "Codex sta compilando la wiki dalla shell locale..."
-    )
+    if mode == "togaf":
+        start_message = "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
+    elif mode == "compile":
+        start_message = "Codex sta compilando la wiki e i requisiti funzionali dalla shell locale..."
+    else:
+        start_message = "Codex sta eseguendo manutenzione sulla wiki dalla shell locale..."
     with codex_lock:
         if codex_state["running"]:
             raise HTTPException(status_code=409, detail="Una compilazione Codex e' gia' in corso.")

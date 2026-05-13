@@ -167,7 +167,13 @@ function renderLinkList(targetList, links, emptyText) {
     button.type = "button";
     button.className = link.exists === false ? "inspector-link missing" : "inspector-link";
     button.textContent = link.title;
-    button.addEventListener("click", () => navigateToPage(link.slug));
+    button.addEventListener("click", () => {
+      if (link.base_path === "/togaf" || !link.base_path) {
+        navigateToPage(link.slug);
+        return;
+      }
+      window.location.href = link.href || `${link.base_path}/${encodeURIComponent(link.slug)}`;
+    });
     item.appendChild(button);
     if (link.count) {
       const badge = document.createElement("small");

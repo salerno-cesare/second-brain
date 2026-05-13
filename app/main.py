@@ -279,12 +279,17 @@ def _run_codex_background(mode: str, language: str) -> None:
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
+    start_message = (
+        "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
+        if mode == "togaf"
+        else "Codex sta compilando la wiki dalla shell locale..."
+    )
     _set_codex_state(
         running=True,
         mode=mode,
         language=language,
         language_label=WIKI_LANGUAGE_OPTIONS[language],
-        message="Codex sta compilando la wiki dalla shell locale...",
+        message=start_message,
         ok=None,
         returncode=None,
         started_at=datetime.now().isoformat(timespec="seconds"),
@@ -326,6 +331,11 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
+    start_message = (
+        "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
+        if mode == "togaf"
+        else "Codex sta compilando la wiki dalla shell locale..."
+    )
     with codex_lock:
         if codex_state["running"]:
             raise HTTPException(status_code=409, detail="Una compilazione Codex e' gia' in corso.")
@@ -335,7 +345,7 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
                 "mode": mode,
                 "language": language,
                 "language_label": WIKI_LANGUAGE_OPTIONS[language],
-                "message": "Codex sta compilando la wiki dalla shell locale...",
+                "message": start_message,
                 "ok": None,
                 "returncode": None,
                 "started_at": datetime.now().isoformat(timespec="seconds"),
@@ -374,6 +384,11 @@ def _source_text_path(title: str) -> Path:
 @app.post("/api/wiki/compile")
 def api_wiki_compile(payload: CodexJobRequest | None = None):
     return _start_codex_job("compile", payload.language if payload else "it")
+
+
+@app.post("/api/wiki/togaf")
+def api_wiki_togaf(payload: CodexJobRequest | None = None):
+    return _start_codex_job("togaf", payload.language if payload else "it")
 
 
 @app.post("/api/wiki/lint")

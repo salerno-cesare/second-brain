@@ -20,6 +20,11 @@ Fonti preparate:
 Struttura artefatti TOGAF di riferimento:
 {togaf_reference}
 
+Regole di scope per modalita':
+- Se mode = compile: aggiorna solo la LLM Wiki principale in wiki/ e non creare, aggiornare o riscrivere wiki/togaf/.
+- Se mode = togaf: usa la LLM Wiki principale in wiki/ come fonte informativa primaria e vincolante. Parti da wiki/_index.md, poi wiki/_log.md, poi le pagine wiki rilevanti. Non usare raw/ o .codex_sources/ come fonte primaria e non modificare le pagine della wiki principale.
+- Se mode = lint: applica manutenzione editoriale e strutturale alle aree indicate dal task, senza introdurre contenuto non supportato.
+
 Best practice obbligatorie per la LLM Wiki:
 1. La wiki e' incrementale: prima preserva e migliora la struttura esistente, poi aggiungi nuove pagine solo se servono davvero.
 2. Ogni pagina deve essere atomica: un solo concetto, processo, entita, decisione, progetto o persona. Se una pagina copre piu' temi distinti, dividila.
@@ -53,12 +58,11 @@ Best practice obbligatorie per la LLM Wiki:
 24. Non modificare codice applicativo, database, raw/ o .codex_sources/.
 25. Non modificare wiki/_config.md: contiene la lingua strutturale della wiki, gestita dall'applicazione e bloccata dopo la prima compilazione.
 
-Regole obbligatorie per la wiki alternativa TOGAF:
-1. In mode = compile aggiorna sempre anche wiki/togaf/ quando esistono informazioni utili nella wiki principale o nelle fonti preparate.
-2. Mantieni wiki/togaf/_index.md come indice navigabile degli artefatti TOGAF, raggruppato secondo la sequenza fase -> deliverable della sezione "Struttura artefatti TOGAF di riferimento".
-3. Mantieni wiki/togaf/_log.md come log append-only delle modifiche alla vista TOGAF.
-4. Crea una pagina Markdown per ogni deliverable TOGAF utile alla documentazione seguendo la lista di riferimento; usa nomi file kebab-case ASCII e non creare deliverable fuori catalogo salvo esplicita richiesta dell'utente.
-5. Ogni pagina artefatto TOGAF deve iniziare con:
+Regole obbligatorie per la wiki alternativa TOGAF, da applicare solo se mode = togaf:
+1. Mantieni wiki/togaf/_index.md come indice navigabile degli artefatti TOGAF, raggruppato secondo la sequenza fase -> deliverable della sezione "Struttura artefatti TOGAF di riferimento".
+2. Mantieni wiki/togaf/_log.md come log append-only delle modifiche alla vista TOGAF.
+3. Crea una pagina Markdown per ogni deliverable TOGAF utile alla documentazione seguendo la lista di riferimento; usa nomi file kebab-case ASCII e non creare deliverable fuori catalogo salvo esplicita richiesta dell'utente.
+4. Ogni pagina artefatto TOGAF deve iniziare con:
    # Titolo
    ## Metadati TOGAF
    - Fase ADM: ...
@@ -66,21 +70,22 @@ Regole obbligatorie per la wiki alternativa TOGAF:
    - Tipo artefatto: Deliverable | Catalogo | Matrice | Diagramma | Indice
    - Template di riferimento: ...
    - Stato contenuto: Completo | Parziale | Da verificare
-6. Dopo i metadati usa sezioni stabili: ## Scopo documentale, ## Contenuto indicizzato, ## Relazioni, ## Gap informativi, ## Fonti wiki.
-7. Gli artefatti TOGAF devono indicizzare e riorganizzare contenuti gia' supportati: non introdurre decisioni, sistemi, requisiti o relazioni non presenti nelle fonti o nella wiki principale.
-8. Usa link interni in formato [[slug|Titolo]] verso altri artefatti TOGAF e, quando utile, verso pagine della wiki principale usando il titolo canonico della pagina.
-9. Usa esattamente le fasi presenti nella reference: Preliminary Phase, Phase A - Architecture Vision, Phase B - Business Architecture, Phase C - Information Systems Architecture, Phase D - Technology Architecture, Phase E - Opportunities and Solutions, Phase F - Migration Planning, Phase G - Implementation Governance, Phase H - Architecture Change Management.
-10. Se una fonte non consente di popolare un deliverable di riferimento, crea o mantieni una pagina parziale solo quando utile e registra chiaramente il gap; altrimenti elenca il deliverable come non popolato nell'indice TOGAF.
+5. Dopo i metadati usa sezioni stabili: ## Scopo documentale, ## Contenuto indicizzato, ## Relazioni, ## Gap informativi, ## Fonti wiki.
+6. Gli artefatti TOGAF devono indicizzare e riorganizzare contenuti gia' supportati: non introdurre decisioni, sistemi, requisiti o relazioni non presenti nella wiki principale.
+7. Usa link interni in formato [[slug|Titolo]] verso altri artefatti TOGAF e, quando utile, verso pagine della wiki principale usando il titolo canonico della pagina.
+8. Usa esattamente le fasi presenti nella reference: Preliminary Phase, Phase A - Architecture Vision, Phase B - Business Architecture, Phase C - Information Systems Architecture, Phase D - Technology Architecture, Phase E - Opportunities and Solutions, Phase F - Migration Planning, Phase G - Implementation Governance, Phase H - Architecture Change Management.
+9. Se la wiki principale non consente di popolare un deliverable di riferimento, crea o mantieni una pagina parziale solo quando utile e registra chiaramente il gap; altrimenti elenca il deliverable come non popolato nell'indice TOGAF.
 
 Procedura di lavoro obbligatoria:
-1. Leggi prima .codex_sources/manifest.json, poi le fonti in .codex_sources/, poi le pagine gia' presenti in wiki/ rilevanti per i concetti trovati.
+1. Se mode = compile o lint, leggi prima .codex_sources/manifest.json, poi le fonti in .codex_sources/, poi le pagine gia' presenti in wiki/ rilevanti per i concetti trovati. Se mode = togaf, leggi prima wiki/_index.md, poi wiki/_log.md, poi le pagine della wiki principale rilevanti.
 2. Identifica i concetti canonici, le entita nominate, le relazioni e gli eventuali conflitti o sovrapposizioni.
 3. Decidi per ogni concetto se creare, aggiornare, unire, dividere o lasciare invariata una pagina esistente.
-4. Aggiorna sempre anche _index.md e _log.md se il contenuto della wiki cambia; per la vista TOGAF aggiorna wiki/togaf/_index.md e wiki/togaf/_log.md.
+4. Aggiorna sempre anche _index.md e _log.md se il contenuto della wiki principale cambia. Se mode = togaf, aggiorna wiki/togaf/_index.md e wiki/togaf/_log.md.
 5. Prima di concludere, controlla: naming coerente, sezioni minime presenti, link sensati, fonti esplicite, nessuna affermazione importante senza supporto.
 
 Criteri specifici per questa esecuzione:
 - Se mode = compile: privilegia copertura incrementale, nuove pagine utili e consolidamento della rete di link.
+- Se mode = togaf: privilegia la tracciabilita' dagli artefatti TOGAF alle pagine della LLM Wiki principale.
 - Se mode = lint: privilegia qualita' editoriale e strutturale, senza introdurre contenuto non supportato dalle fonti.
 
 Output finale richiesto:

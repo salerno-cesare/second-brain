@@ -181,8 +181,6 @@ def ensure_wiki_layout(settings: Settings) -> None:
     settings.source_dir.mkdir(parents=True, exist_ok=True)
     settings.raw_dir.mkdir(parents=True, exist_ok=True)
     settings.wiki_dir.mkdir(parents=True, exist_ok=True)
-    togaf_dir = settings.wiki_dir / TOGAF_WIKI_DIR_NAME
-    togaf_dir.mkdir(parents=True, exist_ok=True)
 
     index_path = settings.wiki_dir / "_index.md"
     if not index_path.exists():
@@ -191,6 +189,11 @@ def ensure_wiki_layout(settings: Settings) -> None:
             "Questa pagina viene aggiornata da Codex durante la compilazione della knowledge base.\n",
             encoding="utf-8",
         )
+
+
+def ensure_togaf_layout(settings: Settings) -> None:
+    togaf_dir = settings.wiki_dir / TOGAF_WIKI_DIR_NAME
+    togaf_dir.mkdir(parents=True, exist_ok=True)
 
     togaf_index_path = togaf_dir / "_index.md"
     if not togaf_index_path.exists():
@@ -304,36 +307,74 @@ def read_wiki_page(wiki_dir: Path, slug: str) -> tuple[WikiPage, str] | None:
     return page, content
 
 
+def _resolve_wiki_link(
+    target_title: str,
+    label: str,
+    title_map: dict[str, str],
+    pages_by_slug: dict[str, _WikiDocument],
+    link_base_path: str,
+    fallback_title_map: dict[str, str] | None = None,
+    fallback_pages_by_slug: dict[str, _WikiDocument] | None = None,
+    fallback_link_base_path: str = "/wiki",
+) -> dict:
+    title_key = slugify_wiki_title(target_title)
+    slug = title_map.get(title_key, title_key)
+    target = pages_by_slug.get(slug)
+    base_path = link_base_path
+
+    if not target and fallback_title_map is not None and fallback_pages_by_slug is not None:
+        fallback_slug = fallback_title_map.get(title_key, title_key)
+        fallback_target = fallback_pages_by_slug.get(fallback_slug)
+        if fallback_target:
+            slug = fallback_slug
+            target = fallback_target
+            base_path = fallback_link_base_path
+
+    exists = target is not None
+    title = target.page.title if target else target_title
+    return {
+        "slug": slug,
+        "title": title,
+        "label": label,
+        "exists": exists,
+        "base_path": base_path,
+        "href": f"{base_path}/{slug}",
+    }
+
+
 def extract_wiki_links(
     markdown: str,
     wiki_dir: Path,
     title_map: dict[str, str] | None = None,
     pages_by_slug: dict[str, _WikiDocument] | None = None,
+    fallback_title_map: dict[str, str] | None = None,
+    fallback_pages_by_slug: dict[str, _WikiDocument] | None = None,
+    link_base_path: str = "/wiki",
+    fallback_link_base_path: str = "/wiki",
 ) -> list[dict]:
     title_map = title_map or _wiki_title_map(wiki_dir)
     pages_by_slug = pages_by_slug or _wiki_documents_by_slug(_load_wiki_documents(wiki_dir))
     links: list[dict] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
 
     for match in WIKI_LINK_RE.finditer(markdown):
         target_title = match.group(1).strip()
         label = (match.group(2) or target_title).strip()
-        slug = title_map.get(slugify_wiki_title(target_title), slugify_wiki_title(target_title))
-        target = pages_by_slug.get(slug)
-        exists = target is not None
-        title = target.page.title if target else target_title
-        key = (slug, label)
+        resolved = _resolve_wiki_link(
+            target_title,
+            label,
+            title_map,
+            pages_by_slug,
+            link_base_path,
+            fallback_title_map,
+            fallback_pages_by_slug,
+            fallback_link_base_path,
+        )
+        key = (resolved["base_path"], resolved["slug"], label)
         if key in seen:
             continue
         seen.add(key)
-        links.append(
-            {
-                "slug": slug,
-                "title": title,
-                "label": label,
-                "exists": exists,
-            }
-        )
+        links.append(resolved)
 
     return links
 
@@ -374,7 +415,13 @@ def get_wiki_backlinks(
     return backlinks
 
 
-def get_wiki_page_payload(wiki_dir: Path, slug: str, link_base_path: str = "/wiki") -> dict | None:
+def get_wiki_page_payload(
+    wiki_dir: Path,
+    slug: str,
+    link_base_path: str = "/wiki",
+    fallback_wiki_dir: Path | None = None,
+    fallback_link_base_path: str = "/wiki",
+) -> dict | None:
     documents = _load_wiki_documents(wiki_dir)
     pages_by_slug = _wiki_documents_by_slug(documents)
     safe_slug = Path(slug).name
@@ -383,17 +430,44 @@ def get_wiki_page_payload(wiki_dir: Path, slug: str, link_base_path: str = "/wik
         return None
 
     title_map = _wiki_title_map_from_documents(documents)
+    fallback_documents = _load_wiki_documents(fallback_wiki_dir) if fallback_wiki_dir else []
+    fallback_title_map = _wiki_title_map_from_documents(fallback_documents) if fallback_documents else None
+    fallback_pages_by_slug = _wiki_documents_by_slug(fallback_documents) if fallback_documents else None
     return {
         "page": document.page.__dict__,
         "markdown": document.markdown,
-        "html": render_wiki_markdown(document.markdown, wiki_dir, title_map, pages_by_slug, link_base_path),
-        "outgoing": extract_wiki_links(document.markdown, wiki_dir, title_map, pages_by_slug),
+        "html": render_wiki_markdown(
+            document.markdown,
+            wiki_dir,
+            title_map,
+            pages_by_slug,
+            link_base_path,
+            fallback_title_map=fallback_title_map,
+            fallback_pages_by_slug=fallback_pages_by_slug,
+            fallback_link_base_path=fallback_link_base_path,
+        ),
+        "outgoing": extract_wiki_links(
+            document.markdown,
+            wiki_dir,
+            title_map,
+            pages_by_slug,
+            fallback_title_map=fallback_title_map,
+            fallback_pages_by_slug=fallback_pages_by_slug,
+            link_base_path=link_base_path,
+            fallback_link_base_path=fallback_link_base_path,
+        ),
         "backlinks": get_wiki_backlinks(wiki_dir, document.page.slug, documents, title_map, pages_by_slug),
     }
 
 
 def get_togaf_page_payload(wiki_dir: Path, slug: str) -> dict | None:
-    payload = get_wiki_page_payload(wiki_dir, slug, link_base_path="/togaf")
+    payload = get_wiki_page_payload(
+        wiki_dir,
+        slug,
+        link_base_path="/togaf",
+        fallback_wiki_dir=wiki_dir.parent,
+        fallback_link_base_path="/wiki",
+    )
     if not payload:
         return None
     payload["togaf"] = extract_togaf_metadata(payload["markdown"], payload["page"])
@@ -549,6 +623,9 @@ def render_wiki_markdown(
     title_map: dict[str, str] | None = None,
     pages_by_slug: dict[str, _WikiDocument] | None = None,
     link_base_path: str = "/wiki",
+    fallback_title_map: dict[str, str] | None = None,
+    fallback_pages_by_slug: dict[str, _WikiDocument] | None = None,
+    fallback_link_base_path: str = "/wiki",
 ) -> str:
     title_map = title_map or _wiki_title_map(wiki_dir)
     pages_by_slug = pages_by_slug or _wiki_documents_by_slug(_load_wiki_documents(wiki_dir))
@@ -556,10 +633,20 @@ def render_wiki_markdown(
     def replace_wiki_link(match: re.Match[str]) -> str:
         target_title = match.group(1).strip()
         label = (match.group(2) or target_title).strip()
-        slug = title_map.get(slugify_wiki_title(target_title), slugify_wiki_title(target_title))
-        exists = slug in pages_by_slug
+        resolved = _resolve_wiki_link(
+            target_title,
+            label,
+            title_map,
+            pages_by_slug,
+            link_base_path,
+            fallback_title_map,
+            fallback_pages_by_slug,
+            fallback_link_base_path,
+        )
+        exists = resolved["exists"]
         css_class = "wiki-link" if exists else "wiki-link missing"
-        return f'<a class="{css_class}" href="{html.escape(link_base_path)}/{html.escape(slug)}">{html.escape(label)}</a>'
+        href = html.escape(resolved["href"])
+        return f'<a class="{css_class}" href="{href}">{html.escape(label)}</a>'
 
     rendered_lines: list[str] = []
     in_list = False
@@ -1034,7 +1121,12 @@ def run_codex_wiki_job(
 ) -> CodexRunResult:
     started = time.monotonic()
     language = normalize_wiki_language(language)
-    sources = prepare_sources_for_codex(settings)
+    if mode == "togaf":
+        ensure_wiki_layout(settings)
+        ensure_togaf_layout(settings)
+        sources = []
+    else:
+        sources = prepare_sources_for_codex(settings)
 
     if mode == "compile" and not sources:
         return CodexRunResult(
@@ -1117,6 +1209,8 @@ def run_codex_wiki_job(
             stderr = (stderr + "\n\n" if stderr else "") + f"Errori spostamento in processed/:\n{details}"
         else:
             message = f"Codex ha aggiornato la wiki e spostato {moved_count} file in processed/."
+    elif ok and mode == "togaf":
+        message = "Codex ha aggiornato la wiki TOGAF partendo dalla LLM Wiki."
     else:
         message = "Codex ha aggiornato la wiki." if ok else error_message or "Codex non ha completato la compilazione."
 

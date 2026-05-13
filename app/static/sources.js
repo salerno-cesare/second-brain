@@ -3,6 +3,7 @@ const output = document.getElementById("upload-result");
 const textForm = document.getElementById("text-upload-form");
 const textOutput = document.getElementById("text-upload-result");
 const compileButton = document.getElementById("compile-wiki");
+const compileTogafButton = document.getElementById("compile-togaf");
 const lintButton = document.getElementById("lint-wiki");
 const codexStatus = document.getElementById("codex-status");
 const wikiLanguage = document.getElementById("wiki-language");
@@ -57,6 +58,9 @@ async function refreshCodexStatus() {
   if (compileButton) {
     compileButton.disabled = Boolean(data.running);
   }
+  if (compileTogafButton) {
+    compileTogafButton.disabled = Boolean(data.running);
+  }
   if (lintButton) {
     lintButton.disabled = Boolean(data.running);
   }
@@ -75,7 +79,12 @@ async function startCodexJob(kind) {
     return;
   }
   codexStatus.textContent = "Avvio Codex...";
-  const endpoint = kind === "lint" ? "/api/wiki/lint" : "/api/wiki/compile";
+  const endpoints = {
+    compile: "/api/wiki/compile",
+    togaf: "/api/wiki/togaf",
+    lint: "/api/wiki/lint",
+  };
+  const endpoint = endpoints[kind] || endpoints.compile;
   const language = wikiLanguage?.value || "it";
   if (wikiLanguage && !wikiLanguage.disabled) {
     window.localStorage.setItem("wiki-language", language);
@@ -102,6 +111,10 @@ async function startCodexJob(kind) {
 
 if (compileButton) {
   compileButton.addEventListener("click", () => startCodexJob("compile"));
+}
+
+if (compileTogafButton) {
+  compileTogafButton.addEventListener("click", () => startCodexJob("togaf"));
 }
 
 if (lintButton) {

@@ -2,13 +2,14 @@
 
 Riferimento derivato dalla struttura del file locale `i094_1.zip` fornito dall'utente.
 
-Usa questa tassonomia come struttura guida per `wiki/togaf/`. La reference contiene organizzazione, fasi, nomi dei deliverable e informazioni attese dedotte dalle intestazioni dei template. I contenuti delle pagine TOGAF devono essere generati esclusivamente da fonti e wiki disponibili.
+Usa questa tassonomia come struttura guida per `wiki/togaf/`. La reference contiene organizzazione, fasi, nomi dei deliverable e informazioni attese dedotte dalle intestazioni dei template. I contenuti delle pagine TOGAF devono essere generati esclusivamente dalla LLM Wiki principale e devono diventare documenti architetturali utilizzabili, non semplici indici.
 
 ## Regola di compilazione
 
-- Per ogni deliverable crea o aggiorna una pagina solo se la wiki principale o le fonti contengono informazioni utili.
+- Per ogni deliverable crea o aggiorna una pagina solo se la wiki principale contiene informazioni utili.
 - Se mancano dati, mantieni la sezione `Gap informativi` esplicita.
-- Non copiare testo dei template: usa questa reference come indice delle informazioni da cercare, non come contenuto documentale.
+- Non copiare testo dei template: usa questa reference come checklist di copertura e struttura, non come contenuto documentale.
+- Trasforma le informazioni disponibili in sintesi, ambito, contenuto documentale, analisi TOGAF, relazioni, decisioni/requisiti/vincoli e gap, mantenendo ogni affermazione tracciabile alla LLM Wiki.
 - Nel metadato `Template di riferimento` usa il nome del deliverable qui riportato.
 
 ## Preliminary Phase

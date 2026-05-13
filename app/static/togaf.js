@@ -81,11 +81,11 @@ function renderMetadata(metadata) {
   }
   metadataList.textContent = "";
   const rows = [
-    ["Fase ADM", metadata?.adm_phase || "Non classificata"],
-    ["Dominio", metadata?.domain || "Non classificato"],
-    ["Tipo", metadata?.artifact_type || "Artefatto"],
-    ["Template", metadata?.template_reference || "Non indicato"],
-    ["Stato", metadata?.status || "Da verificare"],
+    ["ADM Phase", metadata?.adm_phase || "Unclassified"],
+    ["Domain", metadata?.domain || "Unclassified"],
+    ["Type", metadata?.artifact_type || "Artifact"],
+    ["Template", metadata?.template_reference || "Not specified"],
+    ["Status", metadata?.status || "To verify"],
   ];
   rows.forEach(([label, value]) => {
     const term = document.createElement("dt");
@@ -104,31 +104,31 @@ async function loadPage(slug) {
 
   currentSlug = slug;
   setActiveButton(slug);
-  noteContent.innerHTML = '<div class="empty-note">Caricamento...</div>';
+  noteContent.innerHTML = '<div class="empty-note">Loading...</div>';
 
   try {
     const resp = await fetch(`/api/togaf/page/${encodeURIComponent(slug)}`);
     const data = await resp.json();
     if (!resp.ok) {
-      throw new Error(data.detail || "artefatto non disponibile");
+      throw new Error(data.detail || "artifact unavailable");
     }
 
     activeTab.textContent = data.page.title;
     noteMeta.textContent = `${data.page.rel_path} | ${data.page.updated_at} | ${data.togaf.artifact_type}`;
     noteContent.innerHTML = data.html;
     renderMetadata(data.togaf);
-    renderLinkList(backlinkList, data.backlinks, "Nessun backlink");
-    renderLinkList(outlinkList, data.outgoing, "Nessun outlink");
+    renderLinkList(backlinkList, data.backlinks, "No backlinks");
+    renderLinkList(outlinkList, data.outgoing, "No outlinks");
     bindWikiLinks();
     await drawGraph(slug);
   } catch (err) {
-    activeTab.textContent = "Errore";
+    activeTab.textContent = "Error";
     noteMeta.textContent = "";
     renderMetadata(null);
     noteContent.innerHTML = "";
     const message = document.createElement("div");
     message.className = "empty-note";
-    message.textContent = `Impossibile aprire l'artefatto: ${err.message}`;
+    message.textContent = `Unable to open artifact: ${err.message}`;
     noteContent.appendChild(message);
   }
 }

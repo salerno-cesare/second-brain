@@ -48,7 +48,7 @@ codex_state: dict = {
     "mode": None,
     "language": "it",
     "language_label": WIKI_LANGUAGE_OPTIONS["it"],
-    "message": "Nessuna compilazione avviata.",
+    "message": "No compilation started.",
     "ok": None,
     "returncode": None,
     "started_at": None,
@@ -189,18 +189,18 @@ def api_processed_sources():
 def api_delete_source(path: str = Query(..., min_length=1, max_length=260)):
     requested = Path(path)
     if requested.is_absolute():
-        raise HTTPException(status_code=400, detail="Percorso non valido")
+        raise HTTPException(status_code=400, detail="Invalid path")
 
     target = (settings.source_dir / requested).resolve()
     try:
         raw_root = settings.raw_dir.resolve()
     except OSError:
-        raise HTTPException(status_code=500, detail="Directory raw non disponibile")
+        raise HTTPException(status_code=500, detail="Raw directory unavailable")
 
     if raw_root not in target.parents:
-        raise HTTPException(status_code=400, detail="Percorso fuori da raw/")
+        raise HTTPException(status_code=400, detail="Path outside raw/")
     if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="File non trovato")
+        raise HTTPException(status_code=404, detail="File not found")
 
     target.unlink()
     return JSONResponse(content={"status": "ok", "deleted": str(target.relative_to(raw_root)).replace("\\", "/")})
@@ -223,16 +223,16 @@ def _unique_destination(target: Path) -> Path:
 def api_restore_processed_source(path: str = Query(..., min_length=1, max_length=260)):
     requested = Path(path)
     if requested.is_absolute():
-        raise HTTPException(status_code=400, detail="Percorso non valido")
+        raise HTTPException(status_code=400, detail="Invalid path")
 
     source_path = (settings.source_dir / requested).resolve()
     processed_root = (settings.raw_dir.parent / "processed").resolve()
     raw_root = settings.raw_dir.resolve()
 
     if processed_root not in source_path.parents:
-        raise HTTPException(status_code=400, detail="Percorso fuori da processed/")
+        raise HTTPException(status_code=400, detail="Path outside processed/")
     if not source_path.exists() or not source_path.is_file():
-        raise HTTPException(status_code=404, detail="File non trovato")
+        raise HTTPException(status_code=404, detail="File not found")
 
     rel_in_processed = source_path.relative_to(processed_root)
     destination = _unique_destination(raw_root / rel_in_processed)
@@ -343,11 +343,11 @@ def _run_codex_background(mode: str, language: str) -> None:
         language = configured_language
     language = normalize_wiki_language(language)
     if mode == "togaf":
-        start_message = "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
+        start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
     elif mode == "compile":
-        start_message = "Codex sta compilando la wiki e i requisiti funzionali dalla shell locale..."
+        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
     else:
-        start_message = "Codex sta eseguendo manutenzione sulla wiki dalla shell locale..."
+        start_message = "Codex is running wiki maintenance from the local shell..."
     _set_codex_state(
         running=True,
         mode=mode,
@@ -379,7 +379,7 @@ def _run_codex_background(mode: str, language: str) -> None:
     except Exception as exc:
         _set_codex_state(
             running=False,
-            message=f"Errore durante la compilazione Codex: {exc}",
+            message=f"Error during Codex compilation: {exc}",
             ok=False,
             returncode=1,
             finished_at=datetime.now().isoformat(timespec="seconds"),
@@ -396,14 +396,14 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
         language = configured_language
     language = normalize_wiki_language(language)
     if mode == "togaf":
-        start_message = "Codex sta compilando la wiki TOGAF dalla LLM Wiki..."
+        start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
     elif mode == "compile":
-        start_message = "Codex sta compilando la wiki e i requisiti funzionali dalla shell locale..."
+        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
     else:
-        start_message = "Codex sta eseguendo manutenzione sulla wiki dalla shell locale..."
+        start_message = "Codex is running wiki maintenance from the local shell..."
     with codex_lock:
         if codex_state["running"]:
-            raise HTTPException(status_code=409, detail="Una compilazione Codex e' gia' in corso.")
+            raise HTTPException(status_code=409, detail="A Codex compilation is already running.")
         codex_state.update(
             {
                 "running": True,
@@ -430,18 +430,18 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
 def _source_text_path(title: str) -> Path:
     clean_title = Path(title.strip()).name if title.strip() else ""
     if not clean_title:
-        clean_title = f"testo-libero-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
+        clean_title = f"free-text-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
 
     clean_title = re.sub(r"[^\w.-]+", "-", clean_title, flags=re.ASCII).strip(".-")
     if not clean_title:
-        clean_title = f"testo-libero-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
+        clean_title = f"free-text-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
 
     target_path = settings.raw_dir / clean_title
     if not target_path.suffix:
         target_path = target_path.with_suffix(".txt")
 
     if target_path.suffix.lower() not in {".txt", ".md", ".rst", ".log"}:
-        raise HTTPException(status_code=400, detail="Estensione testo non supportata")
+        raise HTTPException(status_code=400, detail="Unsupported text extension")
 
     return target_path
 
@@ -482,7 +482,7 @@ async def api_upload(file: UploadFile = File(...)):
 async def api_upload_text(title: str = Form(default="", max_length=120), text: str = Form(..., max_length=500000)):
     content = text.strip()
     if not content:
-        raise HTTPException(status_code=400, detail="Testo mancante")
+        raise HTTPException(status_code=400, detail="Missing text")
 
     target_path = _source_text_path(title)
     target_path.parent.mkdir(parents=True, exist_ok=True)

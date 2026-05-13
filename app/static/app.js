@@ -87,29 +87,29 @@ async function loadPage(slug) {
 
   currentSlug = slug;
   setActiveButton(slug);
-  noteContent.innerHTML = '<div class="empty-note">Caricamento...</div>';
+  noteContent.innerHTML = '<div class="empty-note">Loading...</div>';
 
   try {
     const resp = await fetch(`/api/wiki/page/${encodeURIComponent(slug)}`);
     const data = await resp.json();
     if (!resp.ok) {
-      throw new Error(data.detail || "pagina non disponibile");
+      throw new Error(data.detail || "page unavailable");
     }
 
     activeTab.textContent = data.page.title;
     noteMeta.textContent = `${data.page.rel_path} | ${data.page.updated_at} | ${data.page.links} link`;
     noteContent.innerHTML = data.html;
-    renderLinkList(backlinkList, data.backlinks, "Nessun backlink");
-    renderLinkList(outlinkList, data.outgoing, "Nessun outlink");
+    renderLinkList(backlinkList, data.backlinks, "No backlinks");
+    renderLinkList(outlinkList, data.outgoing, "No outlinks");
     bindWikiLinks();
     await drawGraph(slug);
   } catch (err) {
-    activeTab.textContent = "Errore";
+    activeTab.textContent = "Error";
     noteMeta.textContent = "";
     noteContent.innerHTML = "";
     const message = document.createElement("div");
     message.className = "empty-note";
-    message.textContent = `Impossibile aprire la nota: ${err.message}`;
+    message.textContent = `Unable to open note: ${err.message}`;
     noteContent.appendChild(message);
   }
 }
@@ -282,7 +282,7 @@ if (form && output) {
     event.preventDefault();
     const formData = new FormData(form);
 
-    output.textContent = "Upload in corso...";
+    output.textContent = "Uploading...";
 
     try {
       const resp = await fetch("/api/upload", {
@@ -292,14 +292,14 @@ if (form && output) {
 
       const data = await resp.json();
       if (!resp.ok) {
-        output.textContent = `Errore: ${data.detail || "upload fallito"}`;
+        output.textContent = `Error: ${data.detail || "upload failed"}`;
         return;
       }
 
-      output.textContent = `File caricato: ${data.file}`;
+      output.textContent = `File uploaded: ${data.file}`;
       setTimeout(() => window.location.reload(), 600);
     } catch (err) {
-      output.textContent = `Errore rete: ${err}`;
+      output.textContent = `Network error: ${err}`;
     }
   });
 }
@@ -311,11 +311,11 @@ async function refreshCodexStatus() {
 
   const resp = await fetch("/api/wiki/status");
   const data = await resp.json();
-  let message = data.message || "Stato non disponibile.";
+  let message = data.message || "Status unavailable.";
   if (data.running) {
-    message = `${message} Avviata: ${data.started_at || ""}`;
+    message = `${message} Started: ${data.started_at || ""}`;
   } else if (data.finished_at) {
-    message = `${message} Fine: ${data.finished_at}.`;
+    message = `${message} Finished: ${data.finished_at}.`;
   }
   codexStatus.textContent = message;
 
@@ -339,19 +339,19 @@ async function startCodexJob(kind) {
   if (!codexStatus) {
     return;
   }
-  codexStatus.textContent = "Avvio Codex...";
+  codexStatus.textContent = "Starting Codex...";
   const endpoint = kind === "lint" ? "/api/wiki/lint" : "/api/wiki/compile";
 
   try {
     const resp = await fetch(endpoint, { method: "POST" });
     const data = await resp.json();
     if (!resp.ok) {
-      codexStatus.textContent = `Errore: ${data.detail || "operazione non avviata"}`;
+      codexStatus.textContent = `Error: ${data.detail || "operation not started"}`;
       return;
     }
     refreshCodexStatus();
   } catch (err) {
-    codexStatus.textContent = `Errore rete: ${err}`;
+    codexStatus.textContent = `Network error: ${err}`;
   }
 }
 

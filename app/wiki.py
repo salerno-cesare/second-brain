@@ -82,18 +82,18 @@ TOGAF_PHASE_ORDER = [
 ]
 
 WIKI_LANGUAGE_OPTIONS: dict[str, str] = {
-    "it": "Italiano",
+    "it": "Italian",
     "en": "English",
-    "es": "Espanol",
-    "fr": "Francais",
-    "de": "Deutsch",
-    "pt": "Portugues",
-    "nl": "Nederlands",
-    "pl": "Polski",
-    "ro": "Romana",
-    "ar": "Arabo",
-    "zh": "Cinese semplificato",
-    "ja": "Giapponese",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "pt": "Portuguese",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "ro": "Romanian",
+    "ar": "Arabic",
+    "zh": "Simplified Chinese",
+    "ja": "Japanese",
 }
 DEFAULT_WIKI_LANGUAGE = "it"
 
@@ -597,11 +597,11 @@ def build_wiki_graph(wiki_dir: Path) -> dict:
 
 def extract_togaf_metadata(markdown: str, page: dict | WikiPage) -> dict:
     metadata = {
-        "adm_phase": "Non classificata",
-        "domain": "Non classificato",
-        "artifact_type": "Artefatto",
-        "template_reference": "Non indicato",
-        "status": "Da verificare",
+        "adm_phase": "Unclassified",
+        "domain": "Unclassified",
+        "artifact_type": "Artifact",
+        "template_reference": "Not specified",
+        "status": "To verify",
     }
     label_map = {
         "fase adm": "adm_phase",
@@ -630,12 +630,12 @@ def extract_togaf_metadata(markdown: str, page: dict | WikiPage) -> dict:
 
 def extract_functional_requirement_metadata(markdown: str, page: dict | WikiPage) -> dict:
     metadata = {
-        "requirement_type": "Requisito",
-        "epic": "Non classificata",
-        "priority": "Non indicata",
-        "status": "Da verificare",
-        "phase": "Non indicata",
-        "wiki_source": "Non indicata",
+        "requirement_type": "Requirement",
+        "epic": "Unclassified",
+        "priority": "Not specified",
+        "status": "To verify",
+        "phase": "Not specified",
+        "wiki_source": "Not specified",
     }
     label_map = {
         "tipo requisito": "requirement_type",
@@ -888,14 +888,14 @@ def _read_config_text(path: Path, label: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise FileNotFoundError(f"{label} non trovato o non leggibile: {path}") from exc
+        raise FileNotFoundError(f"{label} not found or not readable: {path}") from exc
 
 
 def _format_config_template(template: str, values: dict, template_path: Path) -> str:
     try:
         return template.format(**values)
     except KeyError as exc:
-        raise ValueError(f"Placeholder non supportato nel template {template_path}: {exc}") from exc
+        raise ValueError(f"Unsupported placeholder in template {template_path}: {exc}") from exc
 
 
 def _source_cache_matches(cache_entry: dict, path: Path, extracted_path: Path, char_limit: int) -> bool:
@@ -1016,7 +1016,7 @@ def prepare_sources_for_codex(settings: Settings) -> list[PreparedSource]:
     cached_sources = _load_source_manifest(source_text_dir)
     source_extract_template = _read_config_text(
         settings.codex_source_extract_template_path,
-        "Template estrazione fonti Codex",
+        "Codex source extraction template",
     )
 
     source_paths = [
@@ -1121,11 +1121,11 @@ def _load_codex_task_prompt(settings: Settings, mode: str) -> str:
     try:
         tasks = json.loads(raw_tasks)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Prompt task Codex non valido: {settings.codex_task_prompts_path}") from exc
+        raise ValueError(f"Invalid Codex task prompt: {settings.codex_task_prompts_path}") from exc
 
     task = tasks.get(mode)
     if not isinstance(task, str) or not task.strip():
-        raise ValueError(f"Task prompt mancante per mode={mode}: {settings.codex_task_prompts_path}")
+        raise ValueError(f"Missing task prompt for mode={mode}: {settings.codex_task_prompts_path}")
 
     return task.strip()
 
@@ -1134,12 +1134,12 @@ def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str
     if not sources:
         return _read_config_text(
             settings.codex_source_list_empty_template_path,
-            "Template lista fonti vuota Codex",
+            "Empty Codex source list template",
         ).strip()
 
     item_template = _read_config_text(
         settings.codex_source_list_item_template_path,
-        "Template voce lista fonti Codex",
+        "Codex source list item template",
     )
     items = [
         _format_config_template(
@@ -1159,9 +1159,9 @@ def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str
 
 def _load_togaf_reference(settings: Settings) -> str:
     try:
-        return _read_config_text(settings.codex_togaf_reference_path, "Reference artefatti TOGAF").strip()
+        return _read_config_text(settings.codex_togaf_reference_path, "TOGAF artifacts reference").strip()
     except FileNotFoundError:
-        return "Reference artefatti TOGAF non configurata."
+        return "TOGAF artifacts reference not configured."
 
 
 def build_codex_prompt(
@@ -1214,7 +1214,7 @@ $ErrorActionPreference = 'Stop'
 $codexCommand = {_ps_quote(settings.codex_command)}
 $commandInfo = Get-Command $codexCommand -ErrorAction SilentlyContinue
 if (-not $commandInfo -and -not (Test-Path -LiteralPath $codexCommand)) {{
-    throw "Codex CLI non trovato nel PATH della shell locale: $codexCommand"
+    throw "Codex CLI not found in the local shell PATH: $codexCommand"
 }}
 Get-Content -LiteralPath {_ps_quote(prompt_path)} -Raw | & $codexCommand {quoted_args}
 exit $LASTEXITCODE
@@ -1243,7 +1243,7 @@ def run_codex_wiki_job(
             mode=mode,
             returncode=2,
             elapsed_seconds=0,
-            message="Nessuna fonte trovata in raw/. Carica almeno un file supportato.",
+            message="No source found in raw/. Upload at least one supported file.",
             stdout="",
             stderr="",
             sources=sources,
@@ -1280,7 +1280,7 @@ def run_codex_wiki_job(
             mode=mode,
             returncode=127,
             elapsed_seconds=elapsed,
-            message=f"Shell locale non trovata: {settings.codex_shell}",
+            message=f"Local shell not found: {settings.codex_shell}",
             stdout="",
             stderr="",
             sources=sources,
@@ -1292,7 +1292,7 @@ def run_codex_wiki_job(
             mode=mode,
             returncode=124,
             elapsed_seconds=elapsed,
-            message=f"Codex ha superato il timeout di {settings.codex_timeout_seconds} secondi.",
+            message=f"Codex exceeded the {settings.codex_timeout_seconds}-second timeout.",
             stdout=exc.stdout or "",
             stderr=exc.stderr or "",
             sources=sources,
@@ -1311,20 +1311,20 @@ def run_codex_wiki_job(
             ok = False
             returncode = 3
             message = (
-                "Codex ha aggiornato la wiki e i requisiti funzionali, ma lo spostamento in processed/ e' incompleto. "
-                f"File spostati: {moved_count}, errori: {len(move_errors)}."
+                "Codex updated the wiki and functional requirements, but the move to processed/ is incomplete. "
+                f"Files moved: {moved_count}, errors: {len(move_errors)}."
             )
             details = "\n".join(move_errors)
-            stderr = (stderr + "\n\n" if stderr else "") + f"Errori spostamento in processed/:\n{details}"
+            stderr = (stderr + "\n\n" if stderr else "") + f"Errors moving files to processed/:\n{details}"
         else:
             message = (
-                "Codex ha aggiornato la wiki, la vista requisiti funzionali "
-                f"e spostato {moved_count} file in processed/."
+                "Codex updated the wiki and functional requirements view "
+                f"and moved {moved_count} files to processed/."
             )
     elif ok and mode == "togaf":
-        message = "Codex ha aggiornato la wiki TOGAF partendo dalla LLM Wiki."
+        message = "Codex updated the TOGAF wiki from the LLM Wiki."
     else:
-        message = "Codex ha aggiornato la wiki." if ok else error_message or "Codex non ha completato la compilazione."
+        message = "Codex updated the wiki." if ok else error_message or "Codex did not complete the compilation."
 
     return CodexRunResult(
         ok=ok,

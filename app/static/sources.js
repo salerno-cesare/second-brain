@@ -39,14 +39,14 @@ async function refreshCodexStatus() {
 
   const resp = await fetch("/api/wiki/status");
   const data = await resp.json();
-  let message = data.message || "Stato non disponibile.";
+  let message = data.message || "Status unavailable.";
   if (data.running) {
-    message = `${message} Avviata: ${data.started_at || ""}`;
+    message = `${message} Started: ${data.started_at || ""}`;
   } else if (data.finished_at) {
-    message = `${message} Fine: ${data.finished_at}.`;
+    message = `${message} Finished: ${data.finished_at}.`;
   }
   if (data.language_label) {
-    message = `${message} Lingua: ${data.language_label}.`;
+    message = `${message} Language: ${data.language_label}.`;
   }
   codexStatus.textContent = message;
 
@@ -78,7 +78,7 @@ async function startCodexJob(kind) {
   if (!codexStatus) {
     return;
   }
-  codexStatus.textContent = "Avvio Codex...";
+  codexStatus.textContent = "Starting Codex...";
   const endpoints = {
     compile: "/api/wiki/compile",
     togaf: "/api/wiki/togaf",
@@ -100,12 +100,12 @@ async function startCodexJob(kind) {
     });
     const data = await resp.json();
     if (!resp.ok) {
-      codexStatus.textContent = `Errore: ${data.detail || "operazione non avviata"}`;
+      codexStatus.textContent = `Error: ${data.detail || "operation not started"}`;
       return;
     }
     refreshCodexStatus();
   } catch (err) {
-    codexStatus.textContent = `Errore rete: ${err}`;
+    codexStatus.textContent = `Network error: ${err}`;
   }
 }
 
@@ -126,7 +126,7 @@ if (form && output) {
     event.preventDefault();
     const formData = new FormData(form);
 
-    output.textContent = "Upload in corso...";
+    output.textContent = "Uploading...";
 
     try {
       const resp = await fetch("/api/upload", {
@@ -136,14 +136,14 @@ if (form && output) {
 
       const data = await resp.json();
       if (!resp.ok) {
-        output.textContent = `Errore: ${data.detail || "upload fallito"}`;
+        output.textContent = `Error: ${data.detail || "upload failed"}`;
         return;
       }
 
-      output.textContent = `File caricato: ${data.file}`;
+      output.textContent = `File uploaded: ${data.file}`;
       setTimeout(() => window.location.reload(), 500);
     } catch (err) {
-      output.textContent = `Errore rete: ${err}`;
+      output.textContent = `Network error: ${err}`;
     }
   });
 }
@@ -153,7 +153,7 @@ if (textForm && textOutput) {
     event.preventDefault();
     const formData = new FormData(textForm);
 
-    textOutput.textContent = "Caricamento testo...";
+    textOutput.textContent = "Uploading text...";
 
     try {
       const resp = await fetch("/api/upload-text", {
@@ -163,14 +163,14 @@ if (textForm && textOutput) {
 
       const data = await resp.json();
       if (!resp.ok) {
-        textOutput.textContent = `Errore: ${data.detail || "caricamento fallito"}`;
+        textOutput.textContent = `Error: ${data.detail || "upload failed"}`;
         return;
       }
 
-      textOutput.textContent = `Testo caricato: ${data.file}`;
+      textOutput.textContent = `Text uploaded: ${data.file}`;
       setTimeout(() => window.location.reload(), 500);
     } catch (err) {
-      textOutput.textContent = `Errore rete: ${err}`;
+      textOutput.textContent = `Network error: ${err}`;
     }
   });
 }
@@ -191,13 +191,13 @@ if (sourceList && output) {
       return;
     }
 
-    const confirmed = window.confirm(`Vuoi cancellare ${relPath}?`);
+    const confirmed = window.confirm(`Delete ${relPath}?`);
     if (!confirmed) {
       return;
     }
 
     target.disabled = true;
-    output.textContent = `Cancellazione ${relPath}...`;
+    output.textContent = `Deleting ${relPath}...`;
 
     try {
       const resp = await fetch(`/api/sources?path=${encodeURIComponent(relPath)}`, {
@@ -206,16 +206,16 @@ if (sourceList && output) {
       const data = await resp.json();
 
       if (!resp.ok) {
-        output.textContent = `Errore: ${data.detail || "cancellazione non riuscita"}`;
+        output.textContent = `Error: ${data.detail || "deletion failed"}`;
         target.disabled = false;
         return;
       }
 
       row.remove();
       updateSourceCount();
-      output.textContent = `File cancellato: ${data.deleted || relPath}`;
+      output.textContent = `File deleted: ${data.deleted || relPath}`;
     } catch (err) {
-      output.textContent = `Errore rete: ${err}`;
+      output.textContent = `Network error: ${err}`;
       target.disabled = false;
     }
   });
@@ -237,13 +237,13 @@ if (processedList && output) {
       return;
     }
 
-    const confirmed = window.confirm(`Vuoi riportare ${relPath} in raw/?`);
+    const confirmed = window.confirm(`Restore ${relPath} to raw/?`);
     if (!confirmed) {
       return;
     }
 
     target.disabled = true;
-    output.textContent = `Ripristino ${relPath}...`;
+    output.textContent = `Restoring ${relPath}...`;
 
     try {
       const resp = await fetch(`/api/processed/restore?path=${encodeURIComponent(relPath)}`, {
@@ -252,17 +252,17 @@ if (processedList && output) {
       const data = await resp.json();
 
       if (!resp.ok) {
-        output.textContent = `Errore: ${data.detail || "ripristino non riuscito"}`;
+        output.textContent = `Error: ${data.detail || "restore failed"}`;
         target.disabled = false;
         return;
       }
 
       row.remove();
       updateProcessedCount();
-      output.textContent = `File ripristinato in raw/: ${data.restored || relPath}`;
+      output.textContent = `File restored to raw/: ${data.restored || relPath}`;
       setTimeout(() => window.location.reload(), 500);
     } catch (err) {
-      output.textContent = `Errore rete: ${err}`;
+      output.textContent = `Network error: ${err}`;
       target.disabled = false;
     }
   });

@@ -7,10 +7,10 @@
       <span class="count-pill">{{ togaf_pages | length }}</span>
     </div>
 
-    <a class="manage-link" href="/sources">Compila da sorgenti</a>
+    <a class="manage-link" href="/sources">Compile from sources</a>
 
-    <input id="vault-search" class="vault-search" type="search" placeholder="Cerca artefatti" autocomplete="off" />
-    <nav id="page-list" class="note-list" aria-label="Artefatti TOGAF">
+    <input id="vault-search" class="vault-search" type="search" placeholder="Search artifacts" autocomplete="off" />
+    <nav id="page-list" class="note-list" aria-label="TOGAF artifacts">
       {% for page in togaf_pages %}
       <button class="note-item" type="button" data-slug="{{ page.slug }}" data-title="{{ page.title }}">
         <span>{{ page.title }}</span>
@@ -22,22 +22,22 @@
 
   <section class="note-pane">
     <div class="tab-bar">
-      <button id="active-tab" class="tab active" type="button">Nessun artefatto</button>
+      <button id="active-tab" class="tab active" type="button">No artifact</button>
       <div id="note-meta" class="note-meta"></div>
     </div>
     <article id="note-content" class="note-content wiki-content">
-      <div class="empty-note">Seleziona un artefatto TOGAF.</div>
+      <div class="empty-note">Select a TOGAF artifact.</div>
     </article>
   </section>
 
   <aside class="inspector-sidebar togaf-inspector">
     <section class="inspector-section togaf-metadata-section">
-      <h2>Metadati</h2>
+      <h2>Metadata</h2>
       <dl id="togaf-metadata" class="metadata-list"></dl>
     </section>
 
     <section class="inspector-section">
-      <h2>Fasi ADM</h2>
+      <h2>ADM Phases</h2>
       <div id="togaf-phase-list" class="artifact-group-list">
         {% for group in togaf_artifacts.phases %}
         <details open>
@@ -47,13 +47,13 @@
           {% endfor %}
         </details>
         {% else %}
-        <p class="empty-list">Nessun artefatto TOGAF ancora generato.</p>
+        <p class="empty-list">No TOGAF artifacts generated yet.</p>
         {% endfor %}
       </div>
     </section>
 
     <section class="inspector-section">
-      <h2>Domini</h2>
+      <h2>Domains</h2>
       <div id="togaf-domain-list" class="artifact-group-list">
         {% for group in togaf_artifacts.domains %}
         <details>
@@ -63,7 +63,7 @@
           {% endfor %}
         </details>
         {% else %}
-        <p class="empty-list">Nessun dominio ancora indicizzato.</p>
+        <p class="empty-list">No domains indexed yet.</p>
         {% endfor %}
       </div>
     </section>

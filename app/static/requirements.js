@@ -81,12 +81,12 @@ function renderMetadata(metadata) {
   }
   metadataList.textContent = "";
   const rows = [
-    ["Tipo", metadata?.requirement_type || "Requisito"],
-    ["Epica", metadata?.epic || "Non classificata"],
-    ["Priorita", metadata?.priority || "Non indicata"],
-    ["Stato", metadata?.status || "Da verificare"],
-    ["Fase", metadata?.phase || "Non indicata"],
-    ["Fonte", metadata?.wiki_source || "Non indicata"],
+    ["Type", metadata?.requirement_type || "Requirement"],
+    ["Epic", metadata?.epic || "Unclassified"],
+    ["Priority", metadata?.priority || "Not specified"],
+    ["Status", metadata?.status || "To verify"],
+    ["Phase", metadata?.phase || "Not specified"],
+    ["Source", metadata?.wiki_source || "Not specified"],
   ];
   rows.forEach(([label, value]) => {
     const term = document.createElement("dt");
@@ -105,31 +105,31 @@ async function loadPage(slug) {
 
   currentSlug = slug;
   setActiveButton(slug);
-  noteContent.innerHTML = '<div class="empty-note">Caricamento...</div>';
+  noteContent.innerHTML = '<div class="empty-note">Loading...</div>';
 
   try {
     const resp = await fetch(`/api/requirements/page/${encodeURIComponent(slug)}`);
     const data = await resp.json();
     if (!resp.ok) {
-      throw new Error(data.detail || "requisito non disponibile");
+      throw new Error(data.detail || "requirement unavailable");
     }
 
     activeTab.textContent = data.page.title;
     noteMeta.textContent = `${data.page.rel_path} | ${data.page.updated_at} | ${data.requirement.requirement_type}`;
     noteContent.innerHTML = data.html;
     renderMetadata(data.requirement);
-    renderLinkList(backlinkList, data.backlinks, "Nessun backlink");
-    renderLinkList(outlinkList, data.outgoing, "Nessun outlink");
+    renderLinkList(backlinkList, data.backlinks, "No backlinks");
+    renderLinkList(outlinkList, data.outgoing, "No outlinks");
     bindWikiLinks();
     await drawGraph(slug);
   } catch (err) {
-    activeTab.textContent = "Errore";
+    activeTab.textContent = "Error";
     noteMeta.textContent = "";
     renderMetadata(null);
     noteContent.innerHTML = "";
     const message = document.createElement("div");
     message.className = "empty-note";
-    message.textContent = `Impossibile aprire il requisito: ${err.message}`;
+    message.textContent = `Unable to open requirement: ${err.message}`;
     noteContent.appendChild(message);
   }
 }

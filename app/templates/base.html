@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,13 +10,13 @@
   <header class="hero">
     <div class="hero-inner">
       <a class="brand" href="/">LLM Wiki Codex</a>
-      <nav class="top-nav" aria-label="Navigazione principale">
+      <nav class="top-nav" aria-label="Main navigation">
         <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Wiki</a>
         <a href="/togaf" class="{% if request.url.path.startswith('/togaf') %}active{% endif %}">TOGAF</a>
-        <a href="/requirements" class="{% if request.url.path.startswith('/requirements') %}active{% endif %}">Requisiti</a>
-        <a href="/sources" class="{% if request.url.path.startswith('/sources') %}active{% endif %}">Gestione raw</a>
+        <a href="/requirements" class="{% if request.url.path.startswith('/requirements') %}active{% endif %}">Requirements</a>
+        <a href="/sources" class="{% if request.url.path.startswith('/sources') %}active{% endif %}">Sources</a>
       </nav>
-      <p class="subtitle">Vault Markdown compilato da Codex CLI.</p>
+      <p class="subtitle">Markdown vault compiled by Codex CLI.</p>
     </div>
   </header>
 

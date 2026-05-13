@@ -2,10 +2,10 @@
 {% block content %}
 <section class="panel sources-panel">
   <div class="panel-header">
-    <h1>Gestione sorgenti</h1>
-    <a class="manage-link" href="/">Torna alla wiki</a>
+    <h1>Source Management</h1>
+    <a class="manage-link" href="/">Back to wiki</a>
   </div>
-  <p class="panel-subtitle">Carica in raw/, compila la knowledge base e aggiorna automaticamente anche la vista requisiti funzionali.</p>
+  <p class="panel-subtitle">Upload to raw/, compile the knowledge base, and automatically update the functional requirements view.</p>
 
   <div class="upload-card">
     <div class="upload-stack">
@@ -16,28 +16,28 @@
       <p id="upload-result" class="status-line"></p>
 
       <form id="text-upload-form" class="text-upload-form">
-        <input type="text" name="title" placeholder="Nome sorgente" maxlength="120" />
-        <textarea name="text" rows="7" placeholder="Testo libero" required></textarea>
-        <button type="submit">Carica testo</button>
+        <input type="text" name="title" placeholder="Source name" maxlength="120" />
+        <textarea name="text" rows="7" placeholder="Free text" required></textarea>
+        <button type="submit">Upload Text</button>
       </form>
       <p id="text-upload-result" class="status-line"></p>
     </div>
 
     <label class="language-control" for="wiki-language">
-      <span>Lingua wiki</span>
+      <span>Wiki language</span>
       <select id="wiki-language" name="language" {% if wiki_language_locked %}disabled{% endif %}>
         {% for code, label in wiki_languages.items() %}
         <option value="{{ code }}" {% if code == selected_wiki_language %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
       {% if wiki_language_locked %}
-      <small>Configurazione salvata e bloccata per questa wiki.</small>
+      <small>Configuration saved and locked for this wiki.</small>
       {% endif %}
     </label>
 
     <div class="button-row compact">
-      <button type="button" id="compile-wiki">Compila Wiki e Requisiti</button>
-      <button type="button" id="compile-togaf" class="secondary">Compila TOGAF</button>
+      <button type="button" id="compile-wiki">Compile Wiki and Requirements</button>
+      <button type="button" id="compile-togaf" class="secondary">Compile TOGAF</button>
       <button type="button" id="lint-wiki" class="secondary">Lint</button>
     </div>
     <p id="codex-status" class="status-line">{{ codex_state.message }}</p>
@@ -57,10 +57,10 @@
             <span>{{ source.name }}</span>
             <small>{{ source.rel_path }} | {{ source.updated_at }} | {{ source.size }} bytes</small>
           </div>
-          <button type="button" class="danger js-delete-source">Cancella</button>
+          <button type="button" class="danger js-delete-source">Delete</button>
         </li>
         {% else %}
-        <li class="source-empty">Nessun file presente in raw/.</li>
+        <li class="source-empty">No files in raw/.</li>
         {% endfor %}
       </ul>
     </section>
@@ -77,10 +77,10 @@
             <span>{{ source.name }}</span>
             <small>{{ source.rel_path }} | {{ source.updated_at }} | {{ source.size }} bytes</small>
           </div>
-          <button type="button" class="secondary js-restore-source">Riporta in raw</button>
+          <button type="button" class="secondary js-restore-source">Restore to raw</button>
         </li>
         {% else %}
-        <li class="source-empty">Nessun file ancora archiviato in processed/.</li>
+        <li class="source-empty">No files archived in processed/ yet.</li>
         {% endfor %}
       </ul>
     </section>

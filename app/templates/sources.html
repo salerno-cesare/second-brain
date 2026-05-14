@@ -41,6 +41,34 @@
       <button type="button" id="lint-wiki" class="secondary">Lint</button>
     </div>
     <p id="codex-status" class="status-line">{{ codex_state.message }}</p>
+    <div id="codex-live-panel" class="codex-live-panel">
+      <div class="codex-live-header">
+        <div class="codex-live-title">
+          <span id="codex-live-dot" class="codex-live-dot"></span>
+          <span>Codex CLI live status</span>
+        </div>
+        <span id="codex-live-state" class="codex-live-state">Idle</span>
+      </div>
+      <dl class="codex-live-meta">
+        <div>
+          <dt>Mode</dt>
+          <dd id="codex-live-mode">-</dd>
+        </div>
+        <div>
+          <dt>Started</dt>
+          <dd id="codex-live-started">-</dd>
+        </div>
+        <div>
+          <dt>Finished</dt>
+          <dd id="codex-live-finished">-</dd>
+        </div>
+        <div>
+          <dt>Return code</dt>
+          <dd id="codex-live-returncode">-</dd>
+        </div>
+      </dl>
+      <pre id="codex-live-output" class="codex-live-output">No Codex run yet.</pre>
+    </div>
     <p class="hint-line">CLI: {{ codex_command }} via {{ codex_shell }}</p>
   </div>
 

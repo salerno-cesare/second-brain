@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import html
 import json
+import queue
 import re
 import shutil
 import subprocess
+import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +15,7 @@ from datetime import datetime, timezone
 from hashlib import sha1
 from os import cpu_count
 from pathlib import Path
+from typing import Callable
 
 from .config import Settings
 from .ingest import is_supported_file, normalize_text, read_text_from_file
@@ -56,6 +59,16 @@ class CodexRunResult:
     stdout: str
     stderr: str
     sources: list[PreparedSource]
+
+
+CodexProgressCallback = Callable[[str, str], None]
+
+
+@dataclass(frozen=True)
+class _StreamingProcessResult:
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 @dataclass(frozen=True)
@@ -1221,13 +1234,118 @@ exit $LASTEXITCODE
 """.strip()
 
 
+def _emit_codex_progress(callback: CodexProgressCallback | None, stream: str, text: str) -> None:
+    if callback:
+        callback(stream, text)
+
+
+def _read_process_stream(stream, stream_name: str, events: queue.Queue[tuple[str, str]]) -> None:
+    try:
+        for line in iter(stream.readline, ""):
+            events.put((stream_name, line))
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def _run_codex_shell_script(
+    settings: Settings,
+    script: str,
+    progress_callback: CodexProgressCallback | None,
+) -> _StreamingProcessResult:
+    command = [
+        settings.codex_shell,
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        cwd=str(settings.source_dir),
+    )
+
+    events: queue.Queue[tuple[str, str]] = queue.Queue()
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    readers = [
+        threading.Thread(target=_read_process_stream, args=(process.stdout, "stdout", events), daemon=True),
+        threading.Thread(target=_read_process_stream, args=(process.stderr, "stderr", events), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+
+    started = time.monotonic()
+    timed_out = False
+    while True:
+        try:
+            stream, line = events.get(timeout=0.1)
+        except queue.Empty:
+            pass
+        else:
+            if stream == "stdout":
+                stdout_parts.append(line)
+            else:
+                stderr_parts.append(line)
+            _emit_codex_progress(progress_callback, stream, line.rstrip("\r\n"))
+
+        process_finished = process.poll() is not None
+        readers_finished = all(not reader.is_alive() for reader in readers)
+        if process_finished and readers_finished and events.empty():
+            break
+
+        if time.monotonic() - started > settings.codex_timeout_seconds:
+            timed_out = True
+            process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            _emit_codex_progress(
+                progress_callback,
+                "stderr",
+                f"Codex exceeded the {settings.codex_timeout_seconds}-second timeout.",
+            )
+            break
+
+    for reader in readers:
+        reader.join(timeout=1)
+
+    while not events.empty():
+        stream, line = events.get_nowait()
+        if stream == "stdout":
+            stdout_parts.append(line)
+        else:
+            stderr_parts.append(line)
+        _emit_codex_progress(progress_callback, stream, line.rstrip("\r\n"))
+
+    stdout = "".join(stdout_parts)
+    stderr = "".join(stderr_parts)
+    if timed_out:
+        raise subprocess.TimeoutExpired(command, settings.codex_timeout_seconds, output=stdout, stderr=stderr)
+
+    return _StreamingProcessResult(process.returncode or 0, stdout, stderr)
+
+
 def run_codex_wiki_job(
     settings: Settings,
     mode: str = "compile",
     language: str = DEFAULT_WIKI_LANGUAGE,
+    progress_callback: CodexProgressCallback | None = None,
 ) -> CodexRunResult:
     started = time.monotonic()
     language = normalize_wiki_language(language)
+    _emit_codex_progress(progress_callback, "status", "Preparing Codex inputs...")
     if mode == "togaf":
         ensure_wiki_layout(settings)
         ensure_togaf_layout(settings)
@@ -1236,8 +1354,10 @@ def run_codex_wiki_job(
         if mode == "compile":
             ensure_functional_requirements_layout(settings)
         sources = prepare_sources_for_codex(settings)
+    _emit_codex_progress(progress_callback, "status", f"Prepared {len(sources)} source file(s) for Codex.")
 
     if mode == "compile" and not sources:
+        _emit_codex_progress(progress_callback, "status", "No source found in raw/.")
         return CodexRunResult(
             ok=False,
             mode=mode,
@@ -1250,31 +1370,21 @@ def run_codex_wiki_job(
         )
 
     language = ensure_wiki_language_config(settings.wiki_dir, language)
+    _emit_codex_progress(progress_callback, "status", f"Building Codex prompt in {wiki_language_label(language)}...")
     prompt = build_codex_prompt(settings, mode, sources, language)
     source_text_dir = _source_text_dir(settings)
+    source_text_dir.mkdir(parents=True, exist_ok=True)
     prompt_path = source_text_dir / "codex-prompt.txt"
     output_path = source_text_dir / "codex-last-message.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     script = _build_codex_powershell_script(settings, prompt_path, output_path)
 
     try:
-        completed = subprocess.run(
-            [
-                settings.codex_shell,
-                "-NoLogo",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                script,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=settings.codex_timeout_seconds,
-            cwd=str(settings.source_dir),
-        )
+        _emit_codex_progress(progress_callback, "status", f"Starting Codex CLI via {settings.codex_shell}...")
+        completed = _run_codex_shell_script(settings, script, progress_callback)
     except FileNotFoundError:
         elapsed = time.monotonic() - started
+        _emit_codex_progress(progress_callback, "stderr", f"Local shell not found: {settings.codex_shell}")
         return CodexRunResult(
             ok=False,
             mode=mode,
@@ -1306,6 +1416,7 @@ def run_codex_wiki_job(
     error_message = stderr.strip().splitlines()[-1] if stderr.strip() else ""
 
     if ok and mode == "compile":
+        _emit_codex_progress(progress_callback, "status", "Codex completed. Moving compiled sources to processed/...")
         moved_count, move_errors = move_raw_sources_to_processed(settings.raw_dir)
         if move_errors:
             ok = False
@@ -1325,6 +1436,7 @@ def run_codex_wiki_job(
         message = "Codex updated the TOGAF wiki from the LLM Wiki."
     else:
         message = "Codex updated the wiki." if ok else error_message or "Codex did not complete the compilation."
+    _emit_codex_progress(progress_callback, "status", message)
 
     return CodexRunResult(
         ok=ok,

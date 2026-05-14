@@ -42,6 +42,7 @@ app = FastAPI(title="LLM Wiki Codex", version="0.2.0")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
+MAX_CODEX_EVENTS = 180
 codex_lock = threading.Lock()
 codex_state: dict = {
     "running": False,
@@ -56,6 +57,8 @@ codex_state: dict = {
     "elapsed_seconds": None,
     "stdout": "",
     "stderr": "",
+    "events": [],
+    "last_output_at": None,
     "sources": [],
 }
 
@@ -325,7 +328,9 @@ def api_requirements_index():
 @app.get("/api/wiki/status")
 def api_wiki_status():
     configured_language = get_configured_wiki_language(settings.wiki_dir)
-    state = dict(codex_state)
+    with codex_lock:
+        state = dict(codex_state)
+        state["events"] = list(codex_state.get("events") or [])
     state["configured_language"] = configured_language
     state["configured_language_label"] = wiki_language_label(configured_language) if configured_language else None
     state["language_locked"] = configured_language is not None
@@ -335,6 +340,22 @@ def api_wiki_status():
 def _set_codex_state(**values) -> None:
     with codex_lock:
         codex_state.update(values)
+
+
+def _append_codex_event(stream: str, text: str) -> None:
+    clean_text = (text or "").rstrip("\r\n")
+    if not clean_text and stream != "status":
+        return
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    event = {"time": timestamp, "stream": stream, "text": clean_text}
+    with codex_lock:
+        events = list(codex_state.get("events") or [])
+        events.append(event)
+        codex_state["events"] = events[-MAX_CODEX_EVENTS:]
+        codex_state["last_output_at"] = timestamp
+        if stream == "status":
+            codex_state["message"] = clean_text
 
 
 def _run_codex_background(mode: str, language: str) -> None:
@@ -361,10 +382,18 @@ def _run_codex_background(mode: str, language: str) -> None:
         elapsed_seconds=None,
         stdout="",
         stderr="",
+        events=[],
+        last_output_at=None,
         sources=[],
     )
     try:
-        result: CodexRunResult = run_codex_wiki_job(settings, mode=mode, language=language)
+        _append_codex_event("status", start_message)
+        result: CodexRunResult = run_codex_wiki_job(
+            settings,
+            mode=mode,
+            language=language,
+            progress_callback=_append_codex_event,
+        )
         _set_codex_state(
             running=False,
             message=result.message,
@@ -377,6 +406,7 @@ def _run_codex_background(mode: str, language: str) -> None:
             sources=[source.__dict__ for source in result.sources],
         )
     except Exception as exc:
+        _append_codex_event("stderr", str(exc))
         _set_codex_state(
             running=False,
             message=f"Error during Codex compilation: {exc}",
@@ -418,6 +448,8 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
                 "elapsed_seconds": None,
                 "stdout": "",
                 "stderr": "",
+                "events": [],
+                "last_output_at": None,
                 "sources": [],
             }
         )

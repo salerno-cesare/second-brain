@@ -6,6 +6,14 @@ const compileButton = document.getElementById("compile-wiki");
 const compileTogafButton = document.getElementById("compile-togaf");
 const lintButton = document.getElementById("lint-wiki");
 const codexStatus = document.getElementById("codex-status");
+const codexLivePanel = document.getElementById("codex-live-panel");
+const codexLiveDot = document.getElementById("codex-live-dot");
+const codexLiveState = document.getElementById("codex-live-state");
+const codexLiveMode = document.getElementById("codex-live-mode");
+const codexLiveStarted = document.getElementById("codex-live-started");
+const codexLiveFinished = document.getElementById("codex-live-finished");
+const codexLiveReturncode = document.getElementById("codex-live-returncode");
+const codexLiveOutput = document.getElementById("codex-live-output");
 const wikiLanguage = document.getElementById("wiki-language");
 const sourceList = document.getElementById("source-list");
 const sourceCount = document.getElementById("source-count");
@@ -32,6 +40,79 @@ function updateProcessedCount() {
   processedCount.textContent = String(processedList.querySelectorAll("li[data-rel-path]").length);
 }
 
+function shortTime(value) {
+  if (!value) {
+    return "-";
+  }
+  return String(value).replace("T", " ");
+}
+
+function renderCodexLive(data) {
+  if (!codexLivePanel) {
+    return;
+  }
+
+  const isRunning = Boolean(data.running);
+  const ok = data.ok;
+  codexLivePanel.classList.toggle("is-running", isRunning);
+  codexLivePanel.classList.toggle("is-ok", !isRunning && ok === true);
+  codexLivePanel.classList.toggle("is-error", !isRunning && ok === false);
+
+  if (codexLiveDot) {
+    codexLiveDot.className = "codex-live-dot";
+    if (isRunning) {
+      codexLiveDot.classList.add("running");
+    } else if (ok === true) {
+      codexLiveDot.classList.add("ok");
+    } else if (ok === false) {
+      codexLiveDot.classList.add("error");
+    }
+  }
+
+  if (codexLiveState) {
+    if (isRunning) {
+      codexLiveState.textContent = "Running";
+    } else if (ok === true) {
+      codexLiveState.textContent = "Completed";
+    } else if (ok === false) {
+      codexLiveState.textContent = "Failed";
+    } else {
+      codexLiveState.textContent = "Idle";
+    }
+  }
+
+  if (codexLiveMode) {
+    codexLiveMode.textContent = data.mode || "-";
+  }
+  if (codexLiveStarted) {
+    codexLiveStarted.textContent = shortTime(data.started_at);
+  }
+  if (codexLiveFinished) {
+    codexLiveFinished.textContent = shortTime(data.finished_at || data.last_output_at);
+  }
+  if (codexLiveReturncode) {
+    codexLiveReturncode.textContent = data.returncode === null || data.returncode === undefined ? "-" : String(data.returncode);
+  }
+
+  if (codexLiveOutput) {
+    const events = Array.isArray(data.events) ? data.events : [];
+    if (events.length === 0) {
+      codexLiveOutput.textContent = data.stdout || data.stderr || "No Codex run yet.";
+      return;
+    }
+    codexLiveOutput.textContent = events
+      .map((event) => {
+        const time = shortTime(event.time).slice(11) || "--:--:--";
+        const stream = (event.stream || "status").toUpperCase().padEnd(6, " ");
+        return `${time} ${stream} ${event.text || ""}`;
+      })
+      .join("\n");
+    if (isRunning) {
+      codexLiveOutput.scrollTop = codexLiveOutput.scrollHeight;
+    }
+  }
+}
+
 async function refreshCodexStatus() {
   if (!codexStatus) {
     return;
@@ -49,6 +130,7 @@ async function refreshCodexStatus() {
     message = `${message} Language: ${data.language_label}.`;
   }
   codexStatus.textContent = message;
+  renderCodexLive(data);
 
   if (wikiLanguage && data.language_locked) {
     wikiLanguage.value = data.configured_language || wikiLanguage.value;
@@ -79,6 +161,16 @@ async function startCodexJob(kind) {
     return;
   }
   codexStatus.textContent = "Starting Codex...";
+  renderCodexLive({
+    running: true,
+    mode: kind,
+    ok: null,
+    started_at: new Date().toISOString().slice(0, 19),
+    finished_at: null,
+    last_output_at: null,
+    returncode: null,
+    events: [{ time: new Date().toISOString().slice(0, 19), stream: "status", text: "Starting Codex..." }],
+  });
   const endpoints = {
     compile: "/api/wiki/compile",
     togaf: "/api/wiki/togaf",

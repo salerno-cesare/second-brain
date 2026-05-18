@@ -11,8 +11,11 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 from pptx import Presentation
 
-TEXT_EXTENSIONS = {".txt", ".md", ".rst", ".log", ".csv", ".json", ".html", ".htm"}
+TEXT_EXTENSIONS = {".txt", ".md", ".rst", ".log", ".csv", ".json", ".html", ".htm", ".vtt"}
 OFFICE_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
+VTT_TIMESTAMP_RE = re.compile(
+    r"^\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s+-->\s+(?:\d{2}:)?\d{2}:\d{2}\.\d{3}(?:\s+.*)?$"
+)
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,35 @@ def _read_xlsx_text(path: Path) -> str:
     return "\n".join(blocks)
 
 
+def _read_vtt_text(path: Path) -> str:
+    raw = path.read_text(encoding="utf-8-sig", errors="ignore")
+    blocks: list[str] = []
+
+    for block in re.split(r"\n\s*\n", raw.replace("\r\n", "\n").replace("\r", "\n")):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines:
+            continue
+
+        upper_first = lines[0].upper()
+        if upper_first == "WEBVTT" or upper_first.startswith(("WEBVTT ", "NOTE", "STYLE", "REGION")):
+            continue
+
+        timestamp_index = next((index for index, line in enumerate(lines) if VTT_TIMESTAMP_RE.match(line)), None)
+        if timestamp_index is None:
+            continue
+
+        cue_lines: list[str] = []
+        for line in lines[timestamp_index + 1 :]:
+            text = re.sub(r"<[^>]+>", "", line)
+            text = html.unescape(text).strip()
+            if text:
+                cue_lines.append(text)
+
+        if cue_lines:
+            blocks.append(" ".join(cue_lines))
+    return "\n".join(blocks)
+
+
 def read_text_from_file(path: Path) -> str:
     ext = path.suffix.lower()
 
@@ -130,6 +162,9 @@ def read_text_from_file(path: Path) -> str:
             for row in reader:
                 rows.append(" | ".join(row))
         return "\n".join(rows)
+
+    if ext == ".vtt":
+        return _read_vtt_text(path)
 
     return path.read_text(encoding="utf-8", errors="ignore")
 

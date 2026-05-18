@@ -12,7 +12,7 @@ Il flusso e' volutamente semplice:
 Non ci sono piu' SQLite, FTS5, indicizzazione o retrieval API: l'app serve solo a caricare fonti, avviare Codex CLI dalla shell locale e navigare la wiki generata.
 
 ## Funzionalita
-- Upload di `.txt`, `.md`, `.rst`, `.log`, `.csv`, `.json`, `.html`, `.pdf`, `.docx`, `.pptx`, `.xlsx`.
+- Upload di `.txt`, `.md`, `.rst`, `.log`, `.csv`, `.json`, `.html`, `.vtt`, `.pdf`, `.docx`, `.pptx`, `.xlsx`.
 - Estrazione testo dalle fonti raw per facilitare il lavoro di Codex.
 - Esecuzione locale di `codex exec` tramite PowerShell.
 - Compilazione wiki con pagine Markdown, `_index.md`, `_log.md` e link `[[wiki-style]]`.

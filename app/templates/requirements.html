@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="obsidian-shell requirements-shell" data-initial-slug="{{ initial_slug }}">
+  <aside class="vault-sidebar">
+    <div class="vault-title">
+      <span>Requirements</span>
+      <span class="count-pill">{{ requirements_pages | length }}</span>
+    </div>
+
+    <a class="manage-link" href="/sources">Compile from sources</a>
+
+    <input id="vault-search" class="vault-search" type="search" placeholder="Search requirements" autocomplete="off" />
+    <nav id="page-list" class="note-list" aria-label="Functional requirements">
+      {% for page in requirements_pages %}
+      <button class="note-item" type="button" data-slug="{{ page.slug }}" data-title="{{ page.title }}">
+        <span>{{ page.title }}</span>
+        <small>{{ page.links }}</small>
+      </button>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <section class="note-pane">
+    <div class="tab-bar">
+      <button id="active-tab" class="tab active" type="button">No requirement</button>
+      <div id="note-meta" class="note-meta"></div>
+    </div>
+    <article id="note-content" class="note-content wiki-content">
+      <div class="empty-note">Select a functional requirement.</div>
+    </article>
+  </section>
+
+  <aside class="inspector-sidebar requirements-inspector">
+    <section class="inspector-section requirements-metadata-section">
+      <h2>Metadata</h2>
+      <dl id="requirements-metadata" class="metadata-list"></dl>
+    </section>
+
+    <section class="inspector-section">
+      <h2>Epics</h2>
+      <div id="requirements-epic-list" class="artifact-group-list">
+        {% for group in requirements_index.epics %}
+        <details open>
+          <summary>{{ group.name }} <span>{{ group.requirements | length }}</span></summary>
+          {% for requirement in group.requirements %}
+          <button type="button" class="inspector-link js-requirement-link" data-slug="{{ requirement.slug }}">{{ requirement.title }}</button>
+          {% endfor %}
+        </details>
+        {% else %}
+        <p class="empty-list">No epics indexed yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="inspector-section">
+      <h2>Statuses</h2>
+      <div id="requirements-status-list" class="artifact-group-list">
+        {% for group in requirements_index.statuses %}
+        <details>
+          <summary>{{ group.name }} <span>{{ group.requirements | length }}</span></summary>
+          {% for requirement in group.requirements %}
+          <button type="button" class="inspector-link js-requirement-link" data-slug="{{ requirement.slug }}">{{ requirement.title }}</button>
+          {% endfor %}
+        </details>
+        {% else %}
+        <p class="empty-list">No statuses indexed yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="inspector-section">
+      <h2>Outlinks</h2>
+      <ul id="outlink-list" class="link-list"></ul>
+    </section>
+    <section class="inspector-section">
+      <h2>Backlinks</h2>
+      <ul id="backlink-list" class="link-list"></ul>
+    </section>
+    <section class="inspector-section graph-section">
+      <h2>Requirements Graph</h2>
+      <svg id="wiki-graph" viewBox="0 0 320 240" role="img" aria-label="Requirements graph"></svg>
+    </section>
+  </aside>
+</div>
+
+<script src="/static/requirements.js?v=functional-requirements"></script>
+{% endblock %}

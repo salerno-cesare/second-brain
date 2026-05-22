@@ -1,9 +1,4 @@
-const form = document.getElementById("upload-form");
-const output = document.getElementById("upload-result");
-const compileButton = document.getElementById("compile-wiki");
-const lintButton = document.getElementById("lint-wiki");
-const codexStatus = document.getElementById("codex-status");
-const shell = document.querySelector(".obsidian-shell");
+const shell = document.querySelector(".requirements-shell");
 const pageList = document.getElementById("page-list");
 const searchInput = document.getElementById("vault-search");
 const activeTab = document.getElementById("active-tab");
@@ -12,8 +7,8 @@ const noteContent = document.getElementById("note-content");
 const backlinkList = document.getElementById("backlink-list");
 const outlinkList = document.getElementById("outlink-list");
 const graphSvg = document.getElementById("wiki-graph");
+const metadataList = document.getElementById("requirements-metadata");
 
-let codexWasRunning = false;
 let currentSlug = "";
 let graphData = null;
 let searchTimer = null;
@@ -80,6 +75,29 @@ function navigateToPage(slug) {
   loadPage(slug);
 }
 
+function renderMetadata(metadata) {
+  if (!metadataList) {
+    return;
+  }
+  metadataList.textContent = "";
+  const rows = [
+    ["Type", metadata?.requirement_type || "Requirement"],
+    ["Epic", metadata?.epic || "Unclassified"],
+    ["Priority", metadata?.priority || "Not specified"],
+    ["Status", metadata?.status || "To verify"],
+    ["Phase", metadata?.phase || "Not specified"],
+    ["Source", metadata?.wiki_source || "Not specified"],
+  ];
+  rows.forEach(([label, value]) => {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const detail = document.createElement("dd");
+    detail.textContent = value;
+    metadataList.appendChild(term);
+    metadataList.appendChild(detail);
+  });
+}
+
 async function loadPage(slug) {
   if (!slug || !noteContent) {
     return;
@@ -90,15 +108,16 @@ async function loadPage(slug) {
   noteContent.innerHTML = '<div class="empty-note">Loading...</div>';
 
   try {
-    const resp = await fetch(`/api/wiki/page/${encodeURIComponent(slug)}`);
+    const resp = await fetch(`/api/requirements/page/${encodeURIComponent(slug)}`);
     const data = await resp.json();
     if (!resp.ok) {
-      throw new Error(data.detail || "page unavailable");
+      throw new Error(data.detail || "requirement unavailable");
     }
 
     activeTab.textContent = data.page.title;
-    noteMeta.textContent = `${data.page.rel_path} | ${data.page.updated_at} | ${data.page.links} link`;
+    noteMeta.textContent = `${data.page.rel_path} | ${data.page.updated_at} | ${data.requirement.requirement_type}`;
     noteContent.innerHTML = data.html;
+    renderMetadata(data.requirement);
     renderLinkList(backlinkList, data.backlinks, "No backlinks");
     renderLinkList(outlinkList, data.outgoing, "No outlinks");
     bindWikiLinks();
@@ -106,10 +125,11 @@ async function loadPage(slug) {
   } catch (err) {
     activeTab.textContent = "Error";
     noteMeta.textContent = "";
+    renderMetadata(null);
     noteContent.innerHTML = "";
     const message = document.createElement("div");
     message.className = "empty-note";
-    message.textContent = `Unable to open note: ${err.message}`;
+    message.textContent = `Unable to open requirement: ${err.message}`;
     noteContent.appendChild(message);
   }
 }
@@ -119,7 +139,7 @@ function bindWikiLinks() {
     return;
   }
 
-  noteContent.querySelectorAll('a[href^="/wiki/"]').forEach((link) => {
+  noteContent.querySelectorAll('a[href^="/requirements/"]').forEach((link) => {
     link.addEventListener("click", (event) => {
       event.preventDefault();
       const slug = link.getAttribute("href").split("/").pop();
@@ -148,7 +168,13 @@ function renderLinkList(targetList, links, emptyText) {
     button.type = "button";
     button.className = link.exists === false ? "inspector-link missing" : "inspector-link";
     button.textContent = link.title;
-    button.addEventListener("click", () => navigateToPage(link.slug));
+    button.addEventListener("click", () => {
+      if (link.base_path === "/requirements" || !link.base_path) {
+        navigateToPage(link.slug);
+        return;
+      }
+      window.location.href = link.href || `${link.base_path}/${encodeURIComponent(link.slug)}`;
+    });
     item.appendChild(button);
     if (link.count) {
       const badge = document.createElement("small");
@@ -161,7 +187,7 @@ function renderLinkList(targetList, links, emptyText) {
 
 async function ensureGraphData() {
   if (!graphData) {
-    const resp = await fetch("/api/wiki/graph");
+    const resp = await fetch("/api/requirements/graph");
     graphData = await resp.json();
   }
   return graphData;
@@ -197,9 +223,9 @@ async function drawGraph(slug) {
   const centerX = 160;
   const centerY = 120;
   const radius = Math.min(92, 28 + visibleNodes.length * 4);
-
   const current = visibleNodes.find((node) => node.slug === slug);
   const neighbors = visibleNodes.filter((node) => node.slug !== slug);
+
   if (current) {
     positions.set(current.slug, { x: centerX, y: centerY });
     neighbors.forEach((node, index) => {
@@ -243,7 +269,6 @@ async function drawGraph(slug) {
 
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
     group.setAttribute("class", node.slug === slug ? "graph-node active" : "graph-node");
-    group.setAttribute("data-slug", node.slug);
 
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", point.x);
@@ -272,96 +297,14 @@ async function runSearch(query) {
     return;
   }
 
-  const resp = await fetch(`/api/wiki/search?q=${encodeURIComponent(query)}`);
+  const resp = await fetch(`/api/requirements/search?q=${encodeURIComponent(query)}`);
   const data = await resp.json();
   renderPageButtons(data.results || []);
 }
 
-if (form && output) {
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const formData = new FormData(form);
-
-    output.textContent = "Uploading...";
-
-    try {
-      const resp = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await resp.json();
-      if (!resp.ok) {
-        output.textContent = `Error: ${data.detail || "upload failed"}`;
-        return;
-      }
-
-      output.textContent = `File uploaded: ${data.file}`;
-      setTimeout(() => window.location.reload(), 600);
-    } catch (err) {
-      output.textContent = `Network error: ${err}`;
-    }
-  });
-}
-
-async function refreshCodexStatus() {
-  if (!codexStatus) {
-    return;
-  }
-
-  const resp = await fetch("/api/wiki/status");
-  const data = await resp.json();
-  let message = data.message || "Status unavailable.";
-  if (data.running) {
-    message = `${message} Started: ${data.started_at || ""}`;
-  } else if (data.finished_at) {
-    message = `${message} Finished: ${data.finished_at}.`;
-  }
-  codexStatus.textContent = message;
-
-  if (compileButton) {
-    compileButton.disabled = Boolean(data.running);
-  }
-  if (lintButton) {
-    lintButton.disabled = Boolean(data.running);
-  }
-
-  if (data.running) {
-    codexWasRunning = true;
-    setTimeout(refreshCodexStatus, 1800);
-  } else if (codexWasRunning) {
-    codexWasRunning = false;
-    setTimeout(() => window.location.reload(), 700);
-  }
-}
-
-async function startCodexJob(kind) {
-  if (!codexStatus) {
-    return;
-  }
-  codexStatus.textContent = "Starting Codex...";
-  const endpoint = kind === "lint" ? "/api/wiki/lint" : "/api/wiki/compile";
-
-  try {
-    const resp = await fetch(endpoint, { method: "POST" });
-    const data = await resp.json();
-    if (!resp.ok) {
-      codexStatus.textContent = `Error: ${data.detail || "operation not started"}`;
-      return;
-    }
-    refreshCodexStatus();
-  } catch (err) {
-    codexStatus.textContent = `Network error: ${err}`;
-  }
-}
-
-if (compileButton) {
-  compileButton.addEventListener("click", () => startCodexJob("compile"));
-}
-
-if (lintButton) {
-  lintButton.addEventListener("click", () => startCodexJob("lint"));
-}
+document.querySelectorAll(".js-requirement-link").forEach((button) => {
+  button.addEventListener("click", () => navigateToPage(button.dataset.slug));
+});
 
 if (searchInput) {
   searchInput.addEventListener("input", () => {
@@ -379,7 +322,7 @@ window.addEventListener("hashchange", () => {
 
 basePages = collectBasePages();
 renderPageButtons(basePages);
-refreshCodexStatus();
+renderMetadata(null);
 
 const startSlug = window.location.hash.slice(1) || shell?.dataset.initialSlug || basePages[0]?.slug;
 if (startSlug) {

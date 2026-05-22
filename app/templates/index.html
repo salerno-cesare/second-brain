@@ -7,10 +7,10 @@
       <span class="count-pill">{{ wiki_pages | length }}</span>
     </div>
 
-    <a class="manage-link" href="/sources">Apri gestione file raw</a>
+    <a class="manage-link" href="/sources">Open source management</a>
 
-    <input id="vault-search" class="vault-search" type="search" placeholder="Cerca note" autocomplete="off" />
-    <nav id="page-list" class="note-list" aria-label="Pagine wiki">
+    <input id="vault-search" class="vault-search" type="search" placeholder="Search notes" autocomplete="off" />
+    <nav id="page-list" class="note-list" aria-label="Wiki pages">
       {% for page in wiki_pages %}
       <button class="note-item" type="button" data-slug="{{ page.slug }}" data-title="{{ page.title }}">
         <span>{{ page.title }}</span>
@@ -22,11 +22,11 @@
 
   <section class="note-pane">
     <div class="tab-bar">
-      <button id="active-tab" class="tab active" type="button">Nessuna nota</button>
+      <button id="active-tab" class="tab active" type="button">No note</button>
       <div id="note-meta" class="note-meta"></div>
     </div>
     <article id="note-content" class="note-content wiki-content">
-      <div class="empty-note">Seleziona una nota dal vault.</div>
+      <div class="empty-note">Select a note from the vault.</div>
     </article>
   </section>
 

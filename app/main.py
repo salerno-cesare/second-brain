@@ -17,9 +17,16 @@ from .config import get_settings
 from .ingest import is_supported_file, list_source_files
 from .wiki import (
     CodexRunResult,
+    FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME,
+    TOGAF_WIKI_DIR_NAME,
     build_wiki_graph,
+    ensure_functional_requirements_layout,
     ensure_wiki_layout,
+    get_functional_requirements_page_payload,
+    get_togaf_page_payload,
     get_wiki_page_payload,
+    list_functional_requirements,
+    list_togaf_artifacts,
     list_wiki_pages,
     read_wiki_page,
     run_codex_wiki_job,
@@ -35,13 +42,14 @@ app = FastAPI(title="LLM Wiki Codex", version="0.2.0")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
+MAX_CODEX_EVENTS = 180
 codex_lock = threading.Lock()
 codex_state: dict = {
     "running": False,
     "mode": None,
     "language": "it",
     "language_label": WIKI_LANGUAGE_OPTIONS["it"],
-    "message": "Nessuna compilazione avviata.",
+    "message": "No compilation started.",
     "ok": None,
     "returncode": None,
     "started_at": None,
@@ -49,6 +57,8 @@ codex_state: dict = {
     "elapsed_seconds": None,
     "stdout": "",
     "stderr": "",
+    "events": [],
+    "last_output_at": None,
     "sources": [],
 }
 
@@ -60,6 +70,7 @@ class CodexJobRequest(BaseModel):
 @app.on_event("startup")
 def startup_event() -> None:
     ensure_wiki_layout(settings)
+    ensure_functional_requirements_layout(settings)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -99,11 +110,67 @@ def sources_page(request: Request):
     )
 
 
+def _togaf_dir() -> Path:
+    return settings.wiki_dir / TOGAF_WIKI_DIR_NAME
+
+
+def _requirements_dir() -> Path:
+    return settings.wiki_dir / FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME
+
+
+@app.get("/togaf", response_class=HTMLResponse)
+def togaf_home(request: Request):
+    togaf_pages = list_wiki_pages(_togaf_dir())
+    initial_slug = "_index" if any(page.slug == "_index" for page in togaf_pages) else (togaf_pages[0].slug if togaf_pages else "")
+    return templates.TemplateResponse(
+        "togaf.html",
+        {
+            "request": request,
+            "togaf_pages": togaf_pages,
+            "togaf_artifacts": list_togaf_artifacts(_togaf_dir()),
+            "initial_slug": initial_slug,
+        },
+    )
+
+
+@app.get("/requirements", response_class=HTMLResponse)
+def requirements_home(request: Request):
+    requirements_pages = list_wiki_pages(_requirements_dir())
+    initial_slug = (
+        "_index"
+        if any(page.slug == "_index" for page in requirements_pages)
+        else (requirements_pages[0].slug if requirements_pages else "")
+    )
+    return templates.TemplateResponse(
+        "requirements.html",
+        {
+            "request": request,
+            "requirements_pages": requirements_pages,
+            "requirements_index": list_functional_requirements(_requirements_dir()),
+            "initial_slug": initial_slug,
+        },
+    )
+
+
 @app.get("/wiki/{slug}")
 def wiki_detail(slug: str):
     if not read_wiki_page(settings.wiki_dir, slug):
         raise HTTPException(status_code=404, detail="Wiki page not found")
     return RedirectResponse(url=f"/#{quote(slug)}")
+
+
+@app.get("/togaf/{slug}")
+def togaf_detail(slug: str):
+    if not read_wiki_page(_togaf_dir(), slug):
+        raise HTTPException(status_code=404, detail="TOGAF artifact not found")
+    return RedirectResponse(url=f"/togaf#{quote(slug)}")
+
+
+@app.get("/requirements/{slug}")
+def requirements_detail(slug: str):
+    if not read_wiki_page(_requirements_dir(), slug):
+        raise HTTPException(status_code=404, detail="Functional requirement not found")
+    return RedirectResponse(url=f"/requirements#{quote(slug)}")
 
 
 @app.get("/api/sources")
@@ -125,18 +192,18 @@ def api_processed_sources():
 def api_delete_source(path: str = Query(..., min_length=1, max_length=260)):
     requested = Path(path)
     if requested.is_absolute():
-        raise HTTPException(status_code=400, detail="Percorso non valido")
+        raise HTTPException(status_code=400, detail="Invalid path")
 
     target = (settings.source_dir / requested).resolve()
     try:
         raw_root = settings.raw_dir.resolve()
     except OSError:
-        raise HTTPException(status_code=500, detail="Directory raw non disponibile")
+        raise HTTPException(status_code=500, detail="Raw directory unavailable")
 
     if raw_root not in target.parents:
-        raise HTTPException(status_code=400, detail="Percorso fuori da raw/")
+        raise HTTPException(status_code=400, detail="Path outside raw/")
     if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="File non trovato")
+        raise HTTPException(status_code=404, detail="File not found")
 
     target.unlink()
     return JSONResponse(content={"status": "ok", "deleted": str(target.relative_to(raw_root)).replace("\\", "/")})
@@ -159,16 +226,16 @@ def _unique_destination(target: Path) -> Path:
 def api_restore_processed_source(path: str = Query(..., min_length=1, max_length=260)):
     requested = Path(path)
     if requested.is_absolute():
-        raise HTTPException(status_code=400, detail="Percorso non valido")
+        raise HTTPException(status_code=400, detail="Invalid path")
 
     source_path = (settings.source_dir / requested).resolve()
     processed_root = (settings.raw_dir.parent / "processed").resolve()
     raw_root = settings.raw_dir.resolve()
 
     if processed_root not in source_path.parents:
-        raise HTTPException(status_code=400, detail="Percorso fuori da processed/")
+        raise HTTPException(status_code=400, detail="Path outside processed/")
     if not source_path.exists() or not source_path.is_file():
-        raise HTTPException(status_code=404, detail="File non trovato")
+        raise HTTPException(status_code=404, detail="File not found")
 
     rel_in_processed = source_path.relative_to(processed_root)
     destination = _unique_destination(raw_root / rel_in_processed)
@@ -202,10 +269,68 @@ def api_wiki_graph():
     return JSONResponse(content=build_wiki_graph(settings.wiki_dir))
 
 
+@app.get("/api/togaf/pages")
+def api_togaf_pages():
+    return JSONResponse(content={"pages": [page.__dict__ for page in list_wiki_pages(_togaf_dir())]})
+
+
+@app.get("/api/togaf/page/{slug}")
+def api_togaf_page(slug: str):
+    payload = get_togaf_page_payload(_togaf_dir(), slug)
+    if not payload:
+        raise HTTPException(status_code=404, detail="TOGAF artifact not found")
+    return JSONResponse(content=payload)
+
+
+@app.get("/api/togaf/search")
+def api_togaf_search(q: str = Query(default="", max_length=120)):
+    return JSONResponse(content={"query": q, "results": search_wiki_pages(_togaf_dir(), q)})
+
+
+@app.get("/api/togaf/graph")
+def api_togaf_graph():
+    return JSONResponse(content=build_wiki_graph(_togaf_dir()))
+
+
+@app.get("/api/togaf/artifacts")
+def api_togaf_artifacts():
+    return JSONResponse(content=list_togaf_artifacts(_togaf_dir()))
+
+
+@app.get("/api/requirements/pages")
+def api_requirements_pages():
+    return JSONResponse(content={"pages": [page.__dict__ for page in list_wiki_pages(_requirements_dir())]})
+
+
+@app.get("/api/requirements/page/{slug}")
+def api_requirements_page(slug: str):
+    payload = get_functional_requirements_page_payload(_requirements_dir(), slug)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Functional requirement not found")
+    return JSONResponse(content=payload)
+
+
+@app.get("/api/requirements/search")
+def api_requirements_search(q: str = Query(default="", max_length=120)):
+    return JSONResponse(content={"query": q, "results": search_wiki_pages(_requirements_dir(), q)})
+
+
+@app.get("/api/requirements/graph")
+def api_requirements_graph():
+    return JSONResponse(content=build_wiki_graph(_requirements_dir()))
+
+
+@app.get("/api/requirements/index")
+def api_requirements_index():
+    return JSONResponse(content=list_functional_requirements(_requirements_dir()))
+
+
 @app.get("/api/wiki/status")
 def api_wiki_status():
     configured_language = get_configured_wiki_language(settings.wiki_dir)
-    state = dict(codex_state)
+    with codex_lock:
+        state = dict(codex_state)
+        state["events"] = list(codex_state.get("events") or [])
     state["configured_language"] = configured_language
     state["configured_language_label"] = wiki_language_label(configured_language) if configured_language else None
     state["language_locked"] = configured_language is not None
@@ -217,17 +342,39 @@ def _set_codex_state(**values) -> None:
         codex_state.update(values)
 
 
+def _append_codex_event(stream: str, text: str) -> None:
+    clean_text = (text or "").rstrip("\r\n")
+    if not clean_text and stream != "status":
+        return
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    event = {"time": timestamp, "stream": stream, "text": clean_text}
+    with codex_lock:
+        events = list(codex_state.get("events") or [])
+        events.append(event)
+        codex_state["events"] = events[-MAX_CODEX_EVENTS:]
+        codex_state["last_output_at"] = timestamp
+        if stream == "status":
+            codex_state["message"] = clean_text
+
+
 def _run_codex_background(mode: str, language: str) -> None:
     configured_language = get_configured_wiki_language(settings.wiki_dir)
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
+    if mode == "togaf":
+        start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
+    elif mode == "compile":
+        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
+    else:
+        start_message = "Codex is running wiki maintenance from the local shell..."
     _set_codex_state(
         running=True,
         mode=mode,
         language=language,
         language_label=WIKI_LANGUAGE_OPTIONS[language],
-        message="Codex sta compilando la wiki dalla shell locale...",
+        message=start_message,
         ok=None,
         returncode=None,
         started_at=datetime.now().isoformat(timespec="seconds"),
@@ -235,10 +382,18 @@ def _run_codex_background(mode: str, language: str) -> None:
         elapsed_seconds=None,
         stdout="",
         stderr="",
+        events=[],
+        last_output_at=None,
         sources=[],
     )
     try:
-        result: CodexRunResult = run_codex_wiki_job(settings, mode=mode, language=language)
+        _append_codex_event("status", start_message)
+        result: CodexRunResult = run_codex_wiki_job(
+            settings,
+            mode=mode,
+            language=language,
+            progress_callback=_append_codex_event,
+        )
         _set_codex_state(
             running=False,
             message=result.message,
@@ -251,9 +406,10 @@ def _run_codex_background(mode: str, language: str) -> None:
             sources=[source.__dict__ for source in result.sources],
         )
     except Exception as exc:
+        _append_codex_event("stderr", str(exc))
         _set_codex_state(
             running=False,
-            message=f"Errore durante la compilazione Codex: {exc}",
+            message=f"Error during Codex compilation: {exc}",
             ok=False,
             returncode=1,
             finished_at=datetime.now().isoformat(timespec="seconds"),
@@ -269,16 +425,22 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
+    if mode == "togaf":
+        start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
+    elif mode == "compile":
+        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
+    else:
+        start_message = "Codex is running wiki maintenance from the local shell..."
     with codex_lock:
         if codex_state["running"]:
-            raise HTTPException(status_code=409, detail="Una compilazione Codex e' gia' in corso.")
+            raise HTTPException(status_code=409, detail="A Codex compilation is already running.")
         codex_state.update(
             {
                 "running": True,
                 "mode": mode,
                 "language": language,
                 "language_label": WIKI_LANGUAGE_OPTIONS[language],
-                "message": "Codex sta compilando la wiki dalla shell locale...",
+                "message": start_message,
                 "ok": None,
                 "returncode": None,
                 "started_at": datetime.now().isoformat(timespec="seconds"),
@@ -286,6 +448,8 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
                 "elapsed_seconds": None,
                 "stdout": "",
                 "stderr": "",
+                "events": [],
+                "last_output_at": None,
                 "sources": [],
             }
         )
@@ -298,18 +462,18 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
 def _source_text_path(title: str) -> Path:
     clean_title = Path(title.strip()).name if title.strip() else ""
     if not clean_title:
-        clean_title = f"testo-libero-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
+        clean_title = f"free-text-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
 
     clean_title = re.sub(r"[^\w.-]+", "-", clean_title, flags=re.ASCII).strip(".-")
     if not clean_title:
-        clean_title = f"testo-libero-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
+        clean_title = f"free-text-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
 
     target_path = settings.raw_dir / clean_title
     if not target_path.suffix:
         target_path = target_path.with_suffix(".txt")
 
     if target_path.suffix.lower() not in {".txt", ".md", ".rst", ".log"}:
-        raise HTTPException(status_code=400, detail="Estensione testo non supportata")
+        raise HTTPException(status_code=400, detail="Unsupported text extension")
 
     return target_path
 
@@ -317,6 +481,11 @@ def _source_text_path(title: str) -> Path:
 @app.post("/api/wiki/compile")
 def api_wiki_compile(payload: CodexJobRequest | None = None):
     return _start_codex_job("compile", payload.language if payload else "it")
+
+
+@app.post("/api/wiki/togaf")
+def api_wiki_togaf(payload: CodexJobRequest | None = None):
+    return _start_codex_job("togaf", payload.language if payload else "it")
 
 
 @app.post("/api/wiki/lint")
@@ -345,7 +514,7 @@ async def api_upload(file: UploadFile = File(...)):
 async def api_upload_text(title: str = Form(default="", max_length=120), text: str = Form(..., max_length=500000)):
     content = text.strip()
     if not content:
-        raise HTTPException(status_code=400, detail="Testo mancante")
+        raise HTTPException(status_code=400, detail="Missing text")
 
     target_path = _source_text_path(title)
     target_path.parent.mkdir(parents=True, exist_ok=True)

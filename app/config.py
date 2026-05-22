@@ -21,6 +21,7 @@ class Settings:
     codex_source_extract_template_path: Path
     codex_source_list_item_template_path: Path
     codex_source_list_empty_template_path: Path
+    codex_togaf_reference_path: Path
 
 
 def _to_abs(path_value: str) -> Path:
@@ -50,6 +51,9 @@ def get_settings() -> Settings:
     codex_source_list_empty_template_path = _to_abs(
         os.getenv("CODEX_SOURCE_LIST_EMPTY_TEMPLATE", "./config/codex-source-list-empty.txt")
     )
+    codex_togaf_reference_path = _to_abs(
+        os.getenv("CODEX_TOGAF_REFERENCE", "./config/togaf-template-deliverables.md")
+    )
 
     return Settings(
         source_dir=source_dir,
@@ -67,4 +71,5 @@ def get_settings() -> Settings:
         codex_source_extract_template_path=codex_source_extract_template_path,
         codex_source_list_item_template_path=codex_source_list_item_template_path,
         codex_source_list_empty_template_path=codex_source_list_empty_template_path,
+        codex_togaf_reference_path=codex_togaf_reference_path,
     )

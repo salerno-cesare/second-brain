@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import html
 import json
+import queue
 import re
 import shutil
 import subprocess
+import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -13,11 +15,20 @@ from datetime import datetime, timezone
 from hashlib import sha1
 from os import cpu_count
 from pathlib import Path
+from typing import Callable
 
 from .config import Settings
 from .ingest import is_supported_file, normalize_text, read_text_from_file
 
 WIKI_LINK_RE = re.compile(r"\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]")
+TOGAF_META_RE = re.compile(
+    r"^-\s*(Fase ADM|Dominio architetturale|Tipo artefatto|Template di riferimento|Stato contenuto):\s*(.+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+FUNCTIONAL_REQUIREMENT_META_RE = re.compile(
+    r"^-\s*(Tipo requisito|Epica|Priorita|Stato|Fase|Fonte wiki):\s*(.+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +61,16 @@ class CodexRunResult:
     sources: list[PreparedSource]
 
 
+CodexProgressCallback = Callable[[str, str], None]
+
+
+@dataclass(frozen=True)
+class _StreamingProcessResult:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
 @dataclass(frozen=True)
 class _WikiDocument:
     page: WikiPage
@@ -58,21 +79,34 @@ class _WikiDocument:
 
 SOURCE_CACHE_VERSION = 1
 WIKI_CONFIG_FILE = "_config.md"
+TOGAF_WIKI_DIR_NAME = "togaf"
+FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME = "requisiti-funzionali"
 WIKI_LANGUAGE_RE = re.compile(r"^-\s*Codice lingua:\s*([a-z]{2})\s*$", re.MULTILINE)
+TOGAF_PHASE_ORDER = [
+    "Preliminary Phase",
+    "Phase A - Architecture Vision",
+    "Phase B - Business Architecture",
+    "Phase C - Information Systems Architecture",
+    "Phase D - Technology Architecture",
+    "Phase E - Opportunities and Solutions",
+    "Phase F - Migration Planning",
+    "Phase G - Implementation Governance",
+    "Phase H - Architecture Change Management",
+]
 
 WIKI_LANGUAGE_OPTIONS: dict[str, str] = {
-    "it": "Italiano",
+    "it": "Italian",
     "en": "English",
-    "es": "Espanol",
-    "fr": "Francais",
-    "de": "Deutsch",
-    "pt": "Portugues",
-    "nl": "Nederlands",
-    "pl": "Polski",
-    "ro": "Romana",
-    "ar": "Arabo",
-    "zh": "Cinese semplificato",
-    "ja": "Giapponese",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "pt": "Portuguese",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "ro": "Romanian",
+    "ar": "Arabic",
+    "zh": "Simplified Chinese",
+    "ja": "Japanese",
 }
 DEFAULT_WIKI_LANGUAGE = "it"
 
@@ -175,6 +209,52 @@ def ensure_wiki_layout(settings: Settings) -> None:
         )
 
 
+def ensure_togaf_layout(settings: Settings) -> None:
+    togaf_dir = settings.wiki_dir / TOGAF_WIKI_DIR_NAME
+    togaf_dir.mkdir(parents=True, exist_ok=True)
+
+    togaf_index_path = togaf_dir / "_index.md"
+    if not togaf_index_path.exists():
+        togaf_index_path.write_text(
+            "# Indice TOGAF\n\n"
+            "Questa wiki alternativa indicizza i contenuti della knowledge base secondo viste e artefatti TOGAF.\n\n"
+            "## Artefatti\n\n"
+            "- Nessun artefatto TOGAF ancora generato.\n",
+            encoding="utf-8",
+        )
+
+    togaf_log_path = togaf_dir / "_log.md"
+    if not togaf_log_path.exists():
+        togaf_log_path.write_text(
+            "# Log operativo TOGAF\n\n"
+            "Questo log traccia le modifiche alla wiki alternativa TOGAF.\n",
+            encoding="utf-8",
+        )
+
+
+def ensure_functional_requirements_layout(settings: Settings) -> None:
+    requirements_dir = settings.wiki_dir / FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME
+    requirements_dir.mkdir(parents=True, exist_ok=True)
+
+    requirements_index_path = requirements_dir / "_index.md"
+    if not requirements_index_path.exists():
+        requirements_index_path.write_text(
+            "# Indice Requisiti Funzionali\n\n"
+            "Questa wiki parallela indicizza solo requisiti software funzionali, organizzati in epiche e user story.\n\n"
+            "## Epiche\n\n"
+            "- Nessun requisito funzionale ancora generato.\n",
+            encoding="utf-8",
+        )
+
+    requirements_log_path = requirements_dir / "_log.md"
+    if not requirements_log_path.exists():
+        requirements_log_path.write_text(
+            "# Log operativo Requisiti Funzionali\n\n"
+            "Questo log traccia le modifiche alla wiki parallela dei requisiti funzionali.\n",
+            encoding="utf-8",
+        )
+
+
 def slugify_wiki_title(title: str) -> str:
     normalized = unicodedata.normalize("NFKD", title)
     ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
@@ -268,36 +348,74 @@ def read_wiki_page(wiki_dir: Path, slug: str) -> tuple[WikiPage, str] | None:
     return page, content
 
 
+def _resolve_wiki_link(
+    target_title: str,
+    label: str,
+    title_map: dict[str, str],
+    pages_by_slug: dict[str, _WikiDocument],
+    link_base_path: str,
+    fallback_title_map: dict[str, str] | None = None,
+    fallback_pages_by_slug: dict[str, _WikiDocument] | None = None,
+    fallback_link_base_path: str = "/wiki",
+) -> dict:
+    title_key = slugify_wiki_title(target_title)
+    slug = title_map.get(title_key, title_key)
+    target = pages_by_slug.get(slug)
+    base_path = link_base_path
+
+    if not target and fallback_title_map is not None and fallback_pages_by_slug is not None:
+        fallback_slug = fallback_title_map.get(title_key, title_key)
+        fallback_target = fallback_pages_by_slug.get(fallback_slug)
+        if fallback_target:
+            slug = fallback_slug
+            target = fallback_target
+            base_path = fallback_link_base_path
+
+    exists = target is not None
+    title = target.page.title if target else target_title
+    return {
+        "slug": slug,
+        "title": title,
+        "label": label,
+        "exists": exists,
+        "base_path": base_path,
+        "href": f"{base_path}/{slug}",
+    }
+
+
 def extract_wiki_links(
     markdown: str,
     wiki_dir: Path,
     title_map: dict[str, str] | None = None,
     pages_by_slug: dict[str, _WikiDocument] | None = None,
+    fallback_title_map: dict[str, str] | None = None,
+    fallback_pages_by_slug: dict[str, _WikiDocument] | None = None,
+    link_base_path: str = "/wiki",
+    fallback_link_base_path: str = "/wiki",
 ) -> list[dict]:
     title_map = title_map or _wiki_title_map(wiki_dir)
     pages_by_slug = pages_by_slug or _wiki_documents_by_slug(_load_wiki_documents(wiki_dir))
     links: list[dict] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
 
     for match in WIKI_LINK_RE.finditer(markdown):
         target_title = match.group(1).strip()
         label = (match.group(2) or target_title).strip()
-        slug = title_map.get(slugify_wiki_title(target_title), slugify_wiki_title(target_title))
-        target = pages_by_slug.get(slug)
-        exists = target is not None
-        title = target.page.title if target else target_title
-        key = (slug, label)
+        resolved = _resolve_wiki_link(
+            target_title,
+            label,
+            title_map,
+            pages_by_slug,
+            link_base_path,
+            fallback_title_map,
+            fallback_pages_by_slug,
+            fallback_link_base_path,
+        )
+        key = (resolved["base_path"], resolved["slug"], label)
         if key in seen:
             continue
         seen.add(key)
-        links.append(
-            {
-                "slug": slug,
-                "title": title,
-                "label": label,
-                "exists": exists,
-            }
-        )
+        links.append(resolved)
 
     return links
 
@@ -338,7 +456,13 @@ def get_wiki_backlinks(
     return backlinks
 
 
-def get_wiki_page_payload(wiki_dir: Path, slug: str) -> dict | None:
+def get_wiki_page_payload(
+    wiki_dir: Path,
+    slug: str,
+    link_base_path: str = "/wiki",
+    fallback_wiki_dir: Path | None = None,
+    fallback_link_base_path: str = "/wiki",
+) -> dict | None:
     documents = _load_wiki_documents(wiki_dir)
     pages_by_slug = _wiki_documents_by_slug(documents)
     safe_slug = Path(slug).name
@@ -347,13 +471,62 @@ def get_wiki_page_payload(wiki_dir: Path, slug: str) -> dict | None:
         return None
 
     title_map = _wiki_title_map_from_documents(documents)
+    fallback_documents = _load_wiki_documents(fallback_wiki_dir) if fallback_wiki_dir else []
+    fallback_title_map = _wiki_title_map_from_documents(fallback_documents) if fallback_documents else None
+    fallback_pages_by_slug = _wiki_documents_by_slug(fallback_documents) if fallback_documents else None
     return {
         "page": document.page.__dict__,
         "markdown": document.markdown,
-        "html": render_wiki_markdown(document.markdown, wiki_dir, title_map, pages_by_slug),
-        "outgoing": extract_wiki_links(document.markdown, wiki_dir, title_map, pages_by_slug),
+        "html": render_wiki_markdown(
+            document.markdown,
+            wiki_dir,
+            title_map,
+            pages_by_slug,
+            link_base_path,
+            fallback_title_map=fallback_title_map,
+            fallback_pages_by_slug=fallback_pages_by_slug,
+            fallback_link_base_path=fallback_link_base_path,
+        ),
+        "outgoing": extract_wiki_links(
+            document.markdown,
+            wiki_dir,
+            title_map,
+            pages_by_slug,
+            fallback_title_map=fallback_title_map,
+            fallback_pages_by_slug=fallback_pages_by_slug,
+            link_base_path=link_base_path,
+            fallback_link_base_path=fallback_link_base_path,
+        ),
         "backlinks": get_wiki_backlinks(wiki_dir, document.page.slug, documents, title_map, pages_by_slug),
     }
+
+
+def get_togaf_page_payload(wiki_dir: Path, slug: str) -> dict | None:
+    payload = get_wiki_page_payload(
+        wiki_dir,
+        slug,
+        link_base_path="/togaf",
+        fallback_wiki_dir=wiki_dir.parent,
+        fallback_link_base_path="/wiki",
+    )
+    if not payload:
+        return None
+    payload["togaf"] = extract_togaf_metadata(payload["markdown"], payload["page"])
+    return payload
+
+
+def get_functional_requirements_page_payload(wiki_dir: Path, slug: str) -> dict | None:
+    payload = get_wiki_page_payload(
+        wiki_dir,
+        slug,
+        link_base_path="/requirements",
+        fallback_wiki_dir=wiki_dir.parent,
+        fallback_link_base_path="/wiki",
+    )
+    if not payload:
+        return None
+    payload["requirement"] = extract_functional_requirement_metadata(payload["markdown"], payload["page"])
+    return payload
 
 
 def search_wiki_pages(wiki_dir: Path, query: str, limit: int = 30) -> list[dict]:
@@ -435,11 +608,144 @@ def build_wiki_graph(wiki_dir: Path) -> dict:
     return {"nodes": nodes + list(missing_nodes.values()), "edges": edges}
 
 
+def extract_togaf_metadata(markdown: str, page: dict | WikiPage) -> dict:
+    metadata = {
+        "adm_phase": "Unclassified",
+        "domain": "Unclassified",
+        "artifact_type": "Artifact",
+        "template_reference": "Not specified",
+        "status": "To verify",
+    }
+    label_map = {
+        "fase adm": "adm_phase",
+        "dominio architetturale": "domain",
+        "tipo artefatto": "artifact_type",
+        "template di riferimento": "template_reference",
+        "stato contenuto": "status",
+    }
+    for match in TOGAF_META_RE.finditer(markdown):
+        key = label_map.get(match.group(1).strip().lower())
+        if key:
+            metadata[key] = match.group(2).strip()
+
+    if isinstance(page, WikiPage):
+        metadata["slug"] = page.slug
+        metadata["title"] = page.title
+        metadata["rel_path"] = page.rel_path
+        metadata["links"] = page.links
+    else:
+        metadata["slug"] = page.get("slug", "")
+        metadata["title"] = page.get("title", "")
+        metadata["rel_path"] = page.get("rel_path", "")
+        metadata["links"] = page.get("links", 0)
+    return metadata
+
+
+def extract_functional_requirement_metadata(markdown: str, page: dict | WikiPage) -> dict:
+    metadata = {
+        "requirement_type": "Requirement",
+        "epic": "Unclassified",
+        "priority": "Not specified",
+        "status": "To verify",
+        "phase": "Not specified",
+        "wiki_source": "Not specified",
+    }
+    label_map = {
+        "tipo requisito": "requirement_type",
+        "epica": "epic",
+        "priorita": "priority",
+        "stato": "status",
+        "fase": "phase",
+        "fonte wiki": "wiki_source",
+    }
+    for match in FUNCTIONAL_REQUIREMENT_META_RE.finditer(markdown):
+        key = label_map.get(match.group(1).strip().lower())
+        if key:
+            metadata[key] = match.group(2).strip()
+
+    if isinstance(page, WikiPage):
+        metadata["slug"] = page.slug
+        metadata["title"] = page.title
+        metadata["rel_path"] = page.rel_path
+        metadata["links"] = page.links
+    else:
+        metadata["slug"] = page.get("slug", "")
+        metadata["title"] = page.get("title", "")
+        metadata["rel_path"] = page.get("rel_path", "")
+        metadata["links"] = page.get("links", 0)
+    return metadata
+
+
+def list_togaf_artifacts(togaf_dir: Path) -> dict:
+    documents = _load_wiki_documents(togaf_dir)
+    artifacts = [
+        extract_togaf_metadata(document.markdown, document.page)
+        for document in documents
+        if not document.page.slug.startswith("_")
+    ]
+    groups: dict[str, list[dict]] = {}
+    phases: dict[str, list[dict]] = {}
+    types: dict[str, list[dict]] = {}
+
+    for artifact in artifacts:
+        groups.setdefault(artifact["domain"], []).append(artifact)
+        phases.setdefault(artifact["adm_phase"], []).append(artifact)
+        types.setdefault(artifact["artifact_type"], []).append(artifact)
+
+    def ordered(mapping: dict[str, list[dict]], preferred_order: list[str] | None = None) -> list[dict]:
+        order = {name: index for index, name in enumerate(preferred_order or [])}
+        return [
+            {"name": name, "artifacts": sorted(items, key=lambda item: item["title"].lower())}
+            for name, items in sorted(mapping.items(), key=lambda item: (order.get(item[0], 999), item[0].lower()))
+        ]
+
+    return {
+        "artifacts": sorted(artifacts, key=lambda item: item["title"].lower()),
+        "domains": ordered(groups),
+        "phases": ordered(phases, TOGAF_PHASE_ORDER),
+        "types": ordered(types),
+    }
+
+
+def list_functional_requirements(requirements_dir: Path) -> dict:
+    documents = _load_wiki_documents(requirements_dir)
+    requirements = [
+        extract_functional_requirement_metadata(document.markdown, document.page)
+        for document in documents
+        if not document.page.slug.startswith("_")
+    ]
+    epics: dict[str, list[dict]] = {}
+    types: dict[str, list[dict]] = {}
+    statuses: dict[str, list[dict]] = {}
+
+    for requirement in requirements:
+        epics.setdefault(requirement["epic"], []).append(requirement)
+        types.setdefault(requirement["requirement_type"], []).append(requirement)
+        statuses.setdefault(requirement["status"], []).append(requirement)
+
+    def ordered(mapping: dict[str, list[dict]]) -> list[dict]:
+        return [
+            {"name": name, "requirements": sorted(items, key=lambda item: item["title"].lower())}
+            for name, items in sorted(mapping.items(), key=lambda item: item[0].lower())
+        ]
+
+    return {
+        "requirements": sorted(requirements, key=lambda item: item["title"].lower()),
+        "epics": ordered(epics),
+        "types": ordered(types),
+        "statuses": ordered(statuses),
+    }
+
+
 def render_wiki_markdown(
     markdown: str,
     wiki_dir: Path,
     title_map: dict[str, str] | None = None,
     pages_by_slug: dict[str, _WikiDocument] | None = None,
+    link_base_path: str = "/wiki",
+    fallback_title_map: dict[str, str] | None = None,
+    fallback_pages_by_slug: dict[str, _WikiDocument] | None = None,
+    fallback_link_base_path: str = "/wiki",
 ) -> str:
     title_map = title_map or _wiki_title_map(wiki_dir)
     pages_by_slug = pages_by_slug or _wiki_documents_by_slug(_load_wiki_documents(wiki_dir))
@@ -447,10 +753,20 @@ def render_wiki_markdown(
     def replace_wiki_link(match: re.Match[str]) -> str:
         target_title = match.group(1).strip()
         label = (match.group(2) or target_title).strip()
-        slug = title_map.get(slugify_wiki_title(target_title), slugify_wiki_title(target_title))
-        exists = slug in pages_by_slug
+        resolved = _resolve_wiki_link(
+            target_title,
+            label,
+            title_map,
+            pages_by_slug,
+            link_base_path,
+            fallback_title_map,
+            fallback_pages_by_slug,
+            fallback_link_base_path,
+        )
+        exists = resolved["exists"]
         css_class = "wiki-link" if exists else "wiki-link missing"
-        return f'<a class="{css_class}" href="/wiki/{html.escape(slug)}">{html.escape(label)}</a>'
+        href = html.escape(resolved["href"])
+        return f'<a class="{css_class}" href="{href}">{html.escape(label)}</a>'
 
     rendered_lines: list[str] = []
     in_list = False
@@ -585,14 +901,14 @@ def _read_config_text(path: Path, label: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise FileNotFoundError(f"{label} non trovato o non leggibile: {path}") from exc
+        raise FileNotFoundError(f"{label} not found or not readable: {path}") from exc
 
 
 def _format_config_template(template: str, values: dict, template_path: Path) -> str:
     try:
         return template.format(**values)
     except KeyError as exc:
-        raise ValueError(f"Placeholder non supportato nel template {template_path}: {exc}") from exc
+        raise ValueError(f"Unsupported placeholder in template {template_path}: {exc}") from exc
 
 
 def _source_cache_matches(cache_entry: dict, path: Path, extracted_path: Path, char_limit: int) -> bool:
@@ -713,7 +1029,7 @@ def prepare_sources_for_codex(settings: Settings) -> list[PreparedSource]:
     cached_sources = _load_source_manifest(source_text_dir)
     source_extract_template = _read_config_text(
         settings.codex_source_extract_template_path,
-        "Template estrazione fonti Codex",
+        "Codex source extraction template",
     )
 
     source_paths = [
@@ -818,11 +1134,11 @@ def _load_codex_task_prompt(settings: Settings, mode: str) -> str:
     try:
         tasks = json.loads(raw_tasks)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Prompt task Codex non valido: {settings.codex_task_prompts_path}") from exc
+        raise ValueError(f"Invalid Codex task prompt: {settings.codex_task_prompts_path}") from exc
 
     task = tasks.get(mode)
     if not isinstance(task, str) or not task.strip():
-        raise ValueError(f"Task prompt mancante per mode={mode}: {settings.codex_task_prompts_path}")
+        raise ValueError(f"Missing task prompt for mode={mode}: {settings.codex_task_prompts_path}")
 
     return task.strip()
 
@@ -831,12 +1147,12 @@ def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str
     if not sources:
         return _read_config_text(
             settings.codex_source_list_empty_template_path,
-            "Template lista fonti vuota Codex",
+            "Empty Codex source list template",
         ).strip()
 
     item_template = _read_config_text(
         settings.codex_source_list_item_template_path,
-        "Template voce lista fonti Codex",
+        "Codex source list item template",
     )
     items = [
         _format_config_template(
@@ -854,6 +1170,13 @@ def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str
     return "\n".join(items)
 
 
+def _load_togaf_reference(settings: Settings) -> str:
+    try:
+        return _read_config_text(settings.codex_togaf_reference_path, "TOGAF artifacts reference").strip()
+    except FileNotFoundError:
+        return "TOGAF artifacts reference not configured."
+
+
 def build_codex_prompt(
     settings: Settings,
     mode: str,
@@ -868,6 +1191,7 @@ def build_codex_prompt(
             "mode": mode,
             "task": _load_codex_task_prompt(settings, mode),
             "source_list": _build_source_list(settings, sources),
+            "togaf_reference": _load_togaf_reference(settings),
             "language": language_label,
             "language_instruction": (
                 f"Scrivi e mantieni tutte le pagine wiki, _index.md, _log.md e il riepilogo finale "
@@ -903,66 +1227,170 @@ $ErrorActionPreference = 'Stop'
 $codexCommand = {_ps_quote(settings.codex_command)}
 $commandInfo = Get-Command $codexCommand -ErrorAction SilentlyContinue
 if (-not $commandInfo -and -not (Test-Path -LiteralPath $codexCommand)) {{
-    throw "Codex CLI non trovato nel PATH della shell locale: $codexCommand"
+    throw "Codex CLI not found in the local shell PATH: $codexCommand"
 }}
 Get-Content -LiteralPath {_ps_quote(prompt_path)} -Raw | & $codexCommand {quoted_args}
 exit $LASTEXITCODE
 """.strip()
 
 
+def _emit_codex_progress(callback: CodexProgressCallback | None, stream: str, text: str) -> None:
+    if callback:
+        callback(stream, text)
+
+
+def _read_process_stream(stream, stream_name: str, events: queue.Queue[tuple[str, str]]) -> None:
+    try:
+        for line in iter(stream.readline, ""):
+            events.put((stream_name, line))
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def _run_codex_shell_script(
+    settings: Settings,
+    script: str,
+    progress_callback: CodexProgressCallback | None,
+) -> _StreamingProcessResult:
+    command = [
+        settings.codex_shell,
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        cwd=str(settings.source_dir),
+    )
+
+    events: queue.Queue[tuple[str, str]] = queue.Queue()
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    readers = [
+        threading.Thread(target=_read_process_stream, args=(process.stdout, "stdout", events), daemon=True),
+        threading.Thread(target=_read_process_stream, args=(process.stderr, "stderr", events), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+
+    started = time.monotonic()
+    timed_out = False
+    while True:
+        try:
+            stream, line = events.get(timeout=0.1)
+        except queue.Empty:
+            pass
+        else:
+            if stream == "stdout":
+                stdout_parts.append(line)
+            else:
+                stderr_parts.append(line)
+            _emit_codex_progress(progress_callback, stream, line.rstrip("\r\n"))
+
+        process_finished = process.poll() is not None
+        readers_finished = all(not reader.is_alive() for reader in readers)
+        if process_finished and readers_finished and events.empty():
+            break
+
+        if time.monotonic() - started > settings.codex_timeout_seconds:
+            timed_out = True
+            process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            _emit_codex_progress(
+                progress_callback,
+                "stderr",
+                f"Codex exceeded the {settings.codex_timeout_seconds}-second timeout.",
+            )
+            break
+
+    for reader in readers:
+        reader.join(timeout=1)
+
+    while not events.empty():
+        stream, line = events.get_nowait()
+        if stream == "stdout":
+            stdout_parts.append(line)
+        else:
+            stderr_parts.append(line)
+        _emit_codex_progress(progress_callback, stream, line.rstrip("\r\n"))
+
+    stdout = "".join(stdout_parts)
+    stderr = "".join(stderr_parts)
+    if timed_out:
+        raise subprocess.TimeoutExpired(command, settings.codex_timeout_seconds, output=stdout, stderr=stderr)
+
+    return _StreamingProcessResult(process.returncode or 0, stdout, stderr)
+
+
 def run_codex_wiki_job(
     settings: Settings,
     mode: str = "compile",
     language: str = DEFAULT_WIKI_LANGUAGE,
+    progress_callback: CodexProgressCallback | None = None,
 ) -> CodexRunResult:
     started = time.monotonic()
     language = normalize_wiki_language(language)
-    sources = prepare_sources_for_codex(settings)
+    _emit_codex_progress(progress_callback, "status", "Preparing Codex inputs...")
+    if mode == "togaf":
+        ensure_wiki_layout(settings)
+        ensure_togaf_layout(settings)
+        sources = []
+    else:
+        if mode == "compile":
+            ensure_functional_requirements_layout(settings)
+        sources = prepare_sources_for_codex(settings)
+    _emit_codex_progress(progress_callback, "status", f"Prepared {len(sources)} source file(s) for Codex.")
 
     if mode == "compile" and not sources:
+        _emit_codex_progress(progress_callback, "status", "No source found in raw/.")
         return CodexRunResult(
             ok=False,
             mode=mode,
             returncode=2,
             elapsed_seconds=0,
-            message="Nessuna fonte trovata in raw/. Carica almeno un file supportato.",
+            message="No source found in raw/. Upload at least one supported file.",
             stdout="",
             stderr="",
             sources=sources,
         )
 
     language = ensure_wiki_language_config(settings.wiki_dir, language)
+    _emit_codex_progress(progress_callback, "status", f"Building Codex prompt in {wiki_language_label(language)}...")
     prompt = build_codex_prompt(settings, mode, sources, language)
     source_text_dir = _source_text_dir(settings)
+    source_text_dir.mkdir(parents=True, exist_ok=True)
     prompt_path = source_text_dir / "codex-prompt.txt"
     output_path = source_text_dir / "codex-last-message.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     script = _build_codex_powershell_script(settings, prompt_path, output_path)
 
     try:
-        completed = subprocess.run(
-            [
-                settings.codex_shell,
-                "-NoLogo",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                script,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=settings.codex_timeout_seconds,
-            cwd=str(settings.source_dir),
-        )
+        _emit_codex_progress(progress_callback, "status", f"Starting Codex CLI via {settings.codex_shell}...")
+        completed = _run_codex_shell_script(settings, script, progress_callback)
     except FileNotFoundError:
         elapsed = time.monotonic() - started
+        _emit_codex_progress(progress_callback, "stderr", f"Local shell not found: {settings.codex_shell}")
         return CodexRunResult(
             ok=False,
             mode=mode,
             returncode=127,
             elapsed_seconds=elapsed,
-            message=f"Shell locale non trovata: {settings.codex_shell}",
+            message=f"Local shell not found: {settings.codex_shell}",
             stdout="",
             stderr="",
             sources=sources,
@@ -974,7 +1402,7 @@ def run_codex_wiki_job(
             mode=mode,
             returncode=124,
             elapsed_seconds=elapsed,
-            message=f"Codex ha superato il timeout di {settings.codex_timeout_seconds} secondi.",
+            message=f"Codex exceeded the {settings.codex_timeout_seconds}-second timeout.",
             stdout=exc.stdout or "",
             stderr=exc.stderr or "",
             sources=sources,
@@ -988,20 +1416,27 @@ def run_codex_wiki_job(
     error_message = stderr.strip().splitlines()[-1] if stderr.strip() else ""
 
     if ok and mode == "compile":
+        _emit_codex_progress(progress_callback, "status", "Codex completed. Moving compiled sources to processed/...")
         moved_count, move_errors = move_raw_sources_to_processed(settings.raw_dir)
         if move_errors:
             ok = False
             returncode = 3
             message = (
-                "Codex ha aggiornato la wiki, ma lo spostamento in processed/ e' incompleto. "
-                f"File spostati: {moved_count}, errori: {len(move_errors)}."
+                "Codex updated the wiki and functional requirements, but the move to processed/ is incomplete. "
+                f"Files moved: {moved_count}, errors: {len(move_errors)}."
             )
             details = "\n".join(move_errors)
-            stderr = (stderr + "\n\n" if stderr else "") + f"Errori spostamento in processed/:\n{details}"
+            stderr = (stderr + "\n\n" if stderr else "") + f"Errors moving files to processed/:\n{details}"
         else:
-            message = f"Codex ha aggiornato la wiki e spostato {moved_count} file in processed/."
+            message = (
+                "Codex updated the wiki and functional requirements view "
+                f"and moved {moved_count} files to processed/."
+            )
+    elif ok and mode == "togaf":
+        message = "Codex updated the TOGAF wiki from the LLM Wiki."
     else:
-        message = "Codex ha aggiornato la wiki." if ok else error_message or "Codex non ha completato la compilazione."
+        message = "Codex updated the wiki." if ok else error_message or "Codex did not complete the compilation."
+    _emit_codex_progress(progress_callback, "status", message)
 
     return CodexRunResult(
         ok=ok,

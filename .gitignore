@@ -13,6 +13,7 @@ build/
 .vscode/*
 !.vscode/launch.json
 !.vscode/tasks.json
+.codex/
 .idea/
 
 *.log
@@ -25,5 +26,6 @@ knowledge/processed/*
 knowledge/wiki/*
 !knowledge/wiki/.gitkeep
 knowledge/.codex_sources/
+knowledge/graphify-out/
 data/*
 !data/.gitkeep

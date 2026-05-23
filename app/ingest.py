@@ -11,8 +11,45 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 from pptx import Presentation
 
-TEXT_EXTENSIONS = {".txt", ".md", ".rst", ".log", ".csv", ".json", ".html", ".htm", ".vtt"}
+TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".mdx",
+    ".qmd",
+    ".rst",
+    ".log",
+    ".csv",
+    ".json",
+    ".html",
+    ".htm",
+    ".yaml",
+    ".yml",
+    ".vtt",
+}
+CODE_EXTENSIONS = {
+    ".py",
+    ".ts",
+    ".js",
+    ".jsx",
+    ".tsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".c",
+    ".cpp",
+    ".rb",
+    ".cs",
+    ".kt",
+    ".scala",
+    ".php",
+    ".swift",
+    ".lua",
+    ".zig",
+    ".ps1",
+    ".sql",
+}
 OFFICE_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 VTT_TIMESTAMP_RE = re.compile(
     r"^\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s+-->\s+(?:\d{2}:)?\d{2}:\d{2}\.\d{3}(?:\s+.*)?$"
 )
@@ -28,7 +65,12 @@ class SourceFile:
 
 
 def is_supported_file(path: Path) -> bool:
-    return path.suffix.lower() in TEXT_EXTENSIONS or path.suffix.lower() in OFFICE_EXTENSIONS or path.suffix.lower() == ".pdf"
+    ext = path.suffix.lower()
+    return ext in TEXT_EXTENSIONS or ext in CODE_EXTENSIONS or ext in OFFICE_EXTENSIONS or ext in IMAGE_EXTENSIONS or ext == ".pdf"
+
+
+def is_graphify_generated_path(path: Path) -> bool:
+    return any(part.lower() == "graphify-out" for part in path.parts)
 
 
 def _clean_cell_text(value) -> str:
@@ -182,7 +224,7 @@ def list_source_files(raw_dir: Path, source_dir: Path) -> list[SourceFile]:
     source_root = source_dir.resolve()
     files: list[SourceFile] = []
     for path in sorted(raw_dir.rglob("*"), key=lambda item: str(item).lower()):
-        if not path.is_file() or not is_supported_file(path):
+        if not path.is_file() or is_graphify_generated_path(path) or not is_supported_file(path):
             continue
 
         stat = path.stat()

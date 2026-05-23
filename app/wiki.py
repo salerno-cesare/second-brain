@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 import html
-import json
+import os
 import queue
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from hashlib import sha1
-from os import cpu_count
 from pathlib import Path
 from typing import Callable
 
 from .config import Settings
-from .ingest import is_supported_file, normalize_text, read_text_from_file
+from .ingest import is_graphify_generated_path, is_supported_file
 
 WIKI_LINK_RE = re.compile(r"\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]")
 TOGAF_META_RE = re.compile(
@@ -42,15 +40,14 @@ class WikiPage:
 
 
 @dataclass(frozen=True)
-class PreparedSource:
+class GraphifySource:
     rel_path: str
-    extracted_path: str
-    chars: int
-    truncated: bool
+    size: int
+    updated_at: str
 
 
 @dataclass(frozen=True)
-class CodexRunResult:
+class GraphifyRunResult:
     ok: bool
     mode: str
     returncode: int
@@ -58,10 +55,10 @@ class CodexRunResult:
     message: str
     stdout: str
     stderr: str
-    sources: list[PreparedSource]
+    sources: list[GraphifySource]
 
 
-CodexProgressCallback = Callable[[str, str], None]
+GraphifyProgressCallback = Callable[[str, str], None]
 
 
 @dataclass(frozen=True)
@@ -77,7 +74,6 @@ class _WikiDocument:
     markdown: str
 
 
-SOURCE_CACHE_VERSION = 1
 WIKI_CONFIG_FILE = "_config.md"
 TOGAF_WIKI_DIR_NAME = "togaf"
 FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME = "requisiti-funzionali"
@@ -204,7 +200,7 @@ def ensure_wiki_layout(settings: Settings) -> None:
     if not index_path.exists():
         index_path.write_text(
             "# Indice Wiki\n\n"
-            "Questa pagina viene aggiornata da Codex durante la compilazione della knowledge base.\n",
+            "Questa pagina viene aggiornata da Graphify durante la compilazione della knowledge base.\n",
             encoding="utf-8",
         )
 
@@ -833,256 +829,6 @@ def render_wiki_markdown(
     return "\n".join(rendered_lines)
 
 
-def _source_text_dir(settings: Settings) -> Path:
-    return settings.source_dir / ".codex_sources"
-
-
-def _remove_source_cache_entry(child: Path) -> None:
-    for attempt in range(3):
-        try:
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
-            break
-        except FileNotFoundError:
-            break
-        except PermissionError:
-            if attempt == 2:
-                break
-            time.sleep(0.15)
-        except OSError:
-            break
-
-
-def _clear_stale_prepared_source_files(source_text_dir: Path, current_files: set[Path]) -> None:
-    if not source_text_dir.exists():
-        return
-
-    reserved_names = {"codex-prompt.txt", "codex-last-message.txt", "manifest.json"}
-    current_resolved = {path.resolve() for path in current_files}
-    for child in source_text_dir.iterdir():
-        if child.name in reserved_names:
-            continue
-        if child.is_file() and child.resolve() in current_resolved:
-            continue
-        if child.is_file() and child.suffix.lower() != ".txt":
-            continue
-        _remove_source_cache_entry(child)
-
-
-def _load_source_manifest(source_text_dir: Path) -> dict:
-    manifest_path = source_text_dir / "manifest.json"
-    if not manifest_path.exists():
-        return {}
-
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-    if manifest.get("cache_version") != SOURCE_CACHE_VERSION:
-        return {}
-
-    return {
-        source.get("rel_path"): source
-        for source in manifest.get("sources", [])
-        if isinstance(source, dict) and source.get("rel_path")
-    }
-
-
-def _safe_source_extract_path(source_text_dir: Path, rel_path: str, source_path: Path) -> Path:
-    digest = sha1(rel_path.encode("utf-8")).hexdigest()[:10]
-    slug = slugify_wiki_title(source_path.stem)[:80]
-    return source_text_dir / f"source-{slug}-{digest}.txt"
-
-
-def _read_config_text(path: Path, label: str) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise FileNotFoundError(f"{label} not found or not readable: {path}") from exc
-
-
-def _format_config_template(template: str, values: dict, template_path: Path) -> str:
-    try:
-        return template.format(**values)
-    except KeyError as exc:
-        raise ValueError(f"Unsupported placeholder in template {template_path}: {exc}") from exc
-
-
-def _source_cache_matches(cache_entry: dict, path: Path, extracted_path: Path, char_limit: int) -> bool:
-    if not extracted_path.exists() or not extracted_path.is_file():
-        return False
-
-    try:
-        stat = path.stat()
-    except OSError:
-        return False
-
-    return (
-        cache_entry.get("cache_version") == SOURCE_CACHE_VERSION
-        and cache_entry.get("source_size") == stat.st_size
-        and cache_entry.get("source_mtime_ns") == stat.st_mtime_ns
-        and cache_entry.get("char_limit") == char_limit
-        and Path(str(cache_entry.get("extracted_path", ""))).name == extracted_path.name
-    )
-
-
-def _prepare_single_source(
-    path: Path,
-    rel_path: str,
-    source_text_dir: Path,
-    char_limit: int,
-    source_extract_template: str,
-    source_extract_template_path: Path,
-    cache_entry: dict | None,
-) -> tuple[PreparedSource, dict, Path]:
-    extracted_path = _safe_source_extract_path(source_text_dir, rel_path, path)
-    if cache_entry and _source_cache_matches(cache_entry, path, extracted_path, char_limit):
-        chars = int(cache_entry.get("chars") or 0)
-        truncated = bool(cache_entry.get("truncated"))
-        return (
-            PreparedSource(
-                rel_path=rel_path,
-                extracted_path=extracted_path.name,
-                chars=chars,
-                truncated=truncated,
-            ),
-            cache_entry,
-            extracted_path,
-        )
-
-    try:
-        text = normalize_text(read_text_from_file(path))
-    except Exception as exc:
-        text = f"Extraction failed for {rel_path}: {exc}"
-
-    truncated = char_limit > 0 and len(text) > char_limit
-    if truncated:
-        text = text[:char_limit] + "\n\n[TRUNCATED]"
-
-    extracted_content = _format_config_template(
-        source_extract_template,
-        {
-            "rel_path": rel_path,
-            "extracted_at": datetime.now(timezone.utc).isoformat(),
-            "truncated": str(truncated).lower(),
-            "text": text,
-        },
-        source_extract_template_path,
-    )
-    extracted_path.write_text(extracted_content.rstrip() + "\n", encoding="utf-8")
-
-    stat = path.stat()
-    cache_data = {
-        "cache_version": SOURCE_CACHE_VERSION,
-        "rel_path": rel_path,
-        "extracted_path": extracted_path.name,
-        "chars": len(text),
-        "truncated": truncated,
-        "source_size": stat.st_size,
-        "source_mtime_ns": stat.st_mtime_ns,
-        "source_ext": path.suffix.lower(),
-        "char_limit": char_limit,
-    }
-    return (
-        PreparedSource(
-            rel_path=rel_path,
-            extracted_path=extracted_path.name,
-            chars=len(text),
-            truncated=truncated,
-        ),
-        cache_data,
-        extracted_path,
-    )
-
-
-def _source_worker_count(source_count: int) -> int:
-    if source_count <= 1:
-        return 1
-
-    return min(source_count, max(2, min(cpu_count() or 2, 6)))
-
-
-def _prepare_source_job(args: tuple[Path, str, Path, int, str, Path, dict | None]) -> tuple[PreparedSource, dict, Path]:
-    return _prepare_single_source(*args)
-
-
-def _prepared_source_with_relative_path(source: PreparedSource, source_root: Path, extracted_path: Path) -> PreparedSource:
-    return PreparedSource(
-        rel_path=source.rel_path,
-        extracted_path=str(extracted_path.resolve().relative_to(source_root)).replace("\\", "/"),
-        chars=source.chars,
-        truncated=source.truncated,
-    )
-
-
-def prepare_sources_for_codex(settings: Settings) -> list[PreparedSource]:
-    ensure_wiki_layout(settings)
-    source_text_dir = _source_text_dir(settings).resolve()
-    source_root = settings.source_dir.resolve()
-    if source_root not in source_text_dir.parents:
-        raise ValueError("Prepared source directory must stay inside the wiki source directory")
-
-    source_text_dir.mkdir(parents=True, exist_ok=True)
-    cached_sources = _load_source_manifest(source_text_dir)
-    source_extract_template = _read_config_text(
-        settings.codex_source_extract_template_path,
-        "Codex source extraction template",
-    )
-
-    source_paths = [
-        path
-        for path in sorted(settings.raw_dir.rglob("*"), key=lambda item: str(item).lower())
-        if path.is_file() and is_supported_file(path)
-    ]
-    jobs: list[tuple[Path, str, Path, int, str, Path, dict | None]] = []
-    for path in source_paths:
-        rel_path = str(path.resolve().relative_to(source_root)).replace("\\", "/")
-        jobs.append(
-            (
-                path,
-                rel_path,
-                source_text_dir,
-                settings.codex_source_char_limit,
-                source_extract_template,
-                settings.codex_source_extract_template_path,
-                cached_sources.get(rel_path),
-            )
-        )
-
-    prepared: list[PreparedSource] = []
-    manifest_sources: list[dict] = []
-    current_files: set[Path] = set()
-    worker_count = _source_worker_count(len(jobs))
-    if worker_count == 1:
-        results = [_prepare_source_job(job) for job in jobs]
-    else:
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            results = list(executor.map(_prepare_source_job, jobs))
-
-    for source, cache_data, extracted_path in results:
-        current_files.add(extracted_path)
-        relative_source = _prepared_source_with_relative_path(source, source_root, extracted_path)
-        prepared.append(relative_source)
-        manifest_entry = dict(cache_data)
-        manifest_entry["extracted_path"] = relative_source.extracted_path
-        manifest_sources.append(manifest_entry)
-
-    _clear_stale_prepared_source_files(source_text_dir, current_files)
-
-    manifest = {
-        "cache_version": SOURCE_CACHE_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "source_count": len(prepared),
-        "worker_count": worker_count,
-        "sources": manifest_sources,
-    }
-    (source_text_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    return prepared
-
-
 def _processed_target_path(source_path: Path, raw_root: Path, processed_root: Path) -> Path:
     rel_path = source_path.resolve().relative_to(raw_root.resolve())
     target = processed_root / rel_path
@@ -1108,7 +854,7 @@ def move_raw_sources_to_processed(raw_dir: Path) -> tuple[int, list[str]]:
     moved_count = 0
     errors: list[str] = []
     for path in sorted(raw_dir.rglob("*"), key=lambda item: str(item).lower()):
-        if not path.is_file() or not is_supported_file(path):
+        if not path.is_file() or is_graphify_generated_path(path) or not is_supported_file(path):
             continue
 
         rel = str(path.resolve().relative_to(raw_dir.resolve())).replace("\\", "/")
@@ -1129,112 +875,28 @@ def move_raw_sources_to_processed(raw_dir: Path) -> tuple[int, list[str]]:
     return moved_count, errors
 
 
-def _load_codex_task_prompt(settings: Settings, mode: str) -> str:
-    raw_tasks = _read_config_text(settings.codex_task_prompts_path, "Prompt task Codex")
-    try:
-        tasks = json.loads(raw_tasks)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid Codex task prompt: {settings.codex_task_prompts_path}") from exc
+def list_graphify_sources(settings: Settings) -> list[GraphifySource]:
+    if not settings.raw_dir.exists():
+        return []
 
-    task = tasks.get(mode)
-    if not isinstance(task, str) or not task.strip():
-        raise ValueError(f"Missing task prompt for mode={mode}: {settings.codex_task_prompts_path}")
+    source_root = settings.source_dir.resolve()
+    sources: list[GraphifySource] = []
+    for path in sorted(settings.raw_dir.rglob("*"), key=lambda item: str(item).lower()):
+        if not path.is_file() or is_graphify_generated_path(path) or not is_supported_file(path):
+            continue
 
-    return task.strip()
-
-
-def _build_source_list(settings: Settings, sources: list[PreparedSource]) -> str:
-    if not sources:
-        return _read_config_text(
-            settings.codex_source_list_empty_template_path,
-            "Empty Codex source list template",
-        ).strip()
-
-    item_template = _read_config_text(
-        settings.codex_source_list_item_template_path,
-        "Codex source list item template",
-    )
-    items = [
-        _format_config_template(
-            item_template,
-            {
-                "extracted_path": source.extracted_path,
-                "rel_path": source.rel_path,
-                "chars": source.chars,
-                "truncated": source.truncated,
-            },
-            settings.codex_source_list_item_template_path,
-        ).strip()
-        for source in sources
-    ]
-    return "\n".join(items)
+        stat = path.stat()
+        sources.append(
+            GraphifySource(
+                rel_path=str(path.resolve().relative_to(source_root)).replace("\\", "/"),
+                size=stat.st_size,
+                updated_at=datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+            )
+        )
+    return sources
 
 
-def _load_togaf_reference(settings: Settings) -> str:
-    try:
-        return _read_config_text(settings.codex_togaf_reference_path, "TOGAF artifacts reference").strip()
-    except FileNotFoundError:
-        return "TOGAF artifacts reference not configured."
-
-
-def build_codex_prompt(
-    settings: Settings,
-    mode: str,
-    sources: list[PreparedSource],
-    language: str = DEFAULT_WIKI_LANGUAGE,
-) -> str:
-    template = _read_config_text(settings.codex_prompt_template_path, "Prompt template Codex")
-    language_label = wiki_language_label(language)
-    return _format_config_template(
-        template,
-        {
-            "mode": mode,
-            "task": _load_codex_task_prompt(settings, mode),
-            "source_list": _build_source_list(settings, sources),
-            "togaf_reference": _load_togaf_reference(settings),
-            "language": language_label,
-            "language_instruction": (
-                f"Scrivi e mantieni tutte le pagine wiki, _index.md, _log.md e il riepilogo finale "
-                f"in lingua: {language_label}."
-            ),
-        },
-        settings.codex_prompt_template_path,
-    )
-
-
-def _ps_quote(value: str | Path) -> str:
-    return "'" + str(value).replace("'", "''") + "'"
-
-
-def _build_codex_powershell_script(settings: Settings, prompt_path: Path, output_path: Path) -> str:
-    codex_args = [
-        "exec",
-        "--skip-git-repo-check",
-        "--full-auto",
-        "--ephemeral",
-        "-C",
-        str(settings.source_dir),
-        "-o",
-        str(output_path),
-        "-",
-    ]
-    if settings.codex_model:
-        codex_args[1:1] = ["--model", settings.codex_model]
-
-    quoted_args = " ".join(_ps_quote(arg) for arg in codex_args)
-    return f"""
-$ErrorActionPreference = 'Stop'
-$codexCommand = {_ps_quote(settings.codex_command)}
-$commandInfo = Get-Command $codexCommand -ErrorAction SilentlyContinue
-if (-not $commandInfo -and -not (Test-Path -LiteralPath $codexCommand)) {{
-    throw "Codex CLI not found in the local shell PATH: $codexCommand"
-}}
-Get-Content -LiteralPath {_ps_quote(prompt_path)} -Raw | & $codexCommand {quoted_args}
-exit $LASTEXITCODE
-""".strip()
-
-
-def _emit_codex_progress(callback: CodexProgressCallback | None, stream: str, text: str) -> None:
+def _emit_graphify_progress(callback: GraphifyProgressCallback | None, stream: str, text: str) -> None:
     if callback:
         callback(stream, text)
 
@@ -1250,20 +912,15 @@ def _read_process_stream(stream, stream_name: str, events: queue.Queue[tuple[str
             pass
 
 
-def _run_codex_shell_script(
+def _run_graphify_command(
     settings: Settings,
-    script: str,
-    progress_callback: CodexProgressCallback | None,
+    args: list[str],
+    progress_callback: GraphifyProgressCallback | None,
 ) -> _StreamingProcessResult:
-    command = [
-        settings.codex_shell,
-        "-NoLogo",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        script,
-    ]
+    command = [sys.executable, "-m", "graphify", *args]
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -1273,6 +930,7 @@ def _run_codex_shell_script(
         errors="replace",
         bufsize=1,
         cwd=str(settings.source_dir),
+        env=env,
     )
 
     events: queue.Queue[tuple[str, str]] = queue.Queue()
@@ -1297,24 +955,24 @@ def _run_codex_shell_script(
                 stdout_parts.append(line)
             else:
                 stderr_parts.append(line)
-            _emit_codex_progress(progress_callback, stream, line.rstrip("\r\n"))
+            _emit_graphify_progress(progress_callback, stream, line.rstrip("\r\n"))
 
         process_finished = process.poll() is not None
         readers_finished = all(not reader.is_alive() for reader in readers)
         if process_finished and readers_finished and events.empty():
             break
 
-        if time.monotonic() - started > settings.codex_timeout_seconds:
+        if time.monotonic() - started > settings.graphify_timeout_seconds:
             timed_out = True
             process.kill()
             try:
                 process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 pass
-            _emit_codex_progress(
+            _emit_graphify_progress(
                 progress_callback,
                 "stderr",
-                f"Codex exceeded the {settings.codex_timeout_seconds}-second timeout.",
+                f"Graphify exceeded the {settings.graphify_timeout_seconds}-second timeout.",
             )
             break
 
@@ -1327,38 +985,288 @@ def _run_codex_shell_script(
             stdout_parts.append(line)
         else:
             stderr_parts.append(line)
-        _emit_codex_progress(progress_callback, stream, line.rstrip("\r\n"))
+        _emit_graphify_progress(progress_callback, stream, line.rstrip("\r\n"))
 
     stdout = "".join(stdout_parts)
     stderr = "".join(stderr_parts)
     if timed_out:
-        raise subprocess.TimeoutExpired(command, settings.codex_timeout_seconds, output=stdout, stderr=stderr)
+        raise subprocess.TimeoutExpired(command, settings.graphify_timeout_seconds, output=stdout, stderr=stderr)
 
     return _StreamingProcessResult(process.returncode or 0, stdout, stderr)
 
 
-def run_codex_wiki_job(
+def _run_streaming_process(
+    command: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    progress_callback: GraphifyProgressCallback | None,
+    stdin_text: str | None = None,
+) -> _StreamingProcessResult:
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE if stdin_text is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        cwd=str(cwd),
+        env=env,
+    )
+
+    if stdin_text is not None:
+        assert process.stdin is not None
+        process.stdin.write(stdin_text)
+        process.stdin.close()
+
+    events: queue.Queue[tuple[str, str]] = queue.Queue()
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    readers = [
+        threading.Thread(target=_read_process_stream, args=(process.stdout, "stdout", events), daemon=True),
+        threading.Thread(target=_read_process_stream, args=(process.stderr, "stderr", events), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+
+    started = time.monotonic()
+    timed_out = False
+    while True:
+        try:
+            stream, line = events.get(timeout=0.1)
+        except queue.Empty:
+            pass
+        else:
+            if stream == "stdout":
+                stdout_parts.append(line)
+            else:
+                stderr_parts.append(line)
+            _emit_graphify_progress(progress_callback, stream, line.rstrip("\r\n"))
+
+        process_finished = process.poll() is not None
+        readers_finished = all(not reader.is_alive() for reader in readers)
+        if process_finished and readers_finished and events.empty():
+            break
+
+        if time.monotonic() - started > timeout_seconds:
+            timed_out = True
+            process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            _emit_graphify_progress(progress_callback, "stderr", f"Process exceeded the {timeout_seconds}-second timeout.")
+            break
+
+    for reader in readers:
+        reader.join(timeout=1)
+
+    while not events.empty():
+        stream, line = events.get_nowait()
+        if stream == "stdout":
+            stdout_parts.append(line)
+        else:
+            stderr_parts.append(line)
+        _emit_graphify_progress(progress_callback, stream, line.rstrip("\r\n"))
+
+    stdout = "".join(stdout_parts)
+    stderr = "".join(stderr_parts)
+    if timed_out:
+        raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr)
+
+    return _StreamingProcessResult(process.returncode or 0, stdout, stderr)
+
+
+def _graphify_out_dir(settings: Settings) -> Path:
+    return settings.graphify_out_dir / "graphify-out"
+
+
+def _build_graphify_extract_args(settings: Settings) -> list[str]:
+    args = [
+        "extract",
+        str(settings.raw_dir),
+        "--out",
+        str(settings.graphify_out_dir),
+    ]
+    if settings.graphify_backend:
+        args.extend(["--backend", settings.graphify_backend])
+    if settings.graphify_model:
+        args.extend(["--model", settings.graphify_model])
+    if settings.graphify_max_workers is not None:
+        args.extend(["--max-workers", str(settings.graphify_max_workers)])
+    if settings.graphify_token_budget is not None:
+        args.extend(["--token-budget", str(settings.graphify_token_budget)])
+    if settings.graphify_max_concurrency is not None:
+        args.extend(["--max-concurrency", str(settings.graphify_max_concurrency)])
+    return args
+
+
+def _graphify_agent_prompt(settings: Settings) -> str:
+    raw_path = str(settings.raw_dir.resolve()).replace('"', '\\"')
+    return (
+        f'/graphify "{raw_path}" --wiki\n\n'
+        "Use the Graphify skill workflow. Build the knowledge graph and the wiki in graphify-out/. "
+        "Do not use external Graphify API-key mode; use the CLI agent model for semantic extraction."
+    )
+
+
+def _ensure_graphify_codex_skill(settings: Settings, progress_callback: GraphifyProgressCallback | None) -> str:
+    _emit_graphify_progress(progress_callback, "status", "Ensuring Graphify skill is installed for Codex CLI...")
+    completed = _run_graphify_command(
+        settings,
+        ["install", "--platform", "codex"],
+        progress_callback,
+    )
+    if completed.returncode != 0:
+        error = completed.stderr.strip().splitlines()[-1] if completed.stderr.strip() else "Graphify Codex skill install failed."
+        raise RuntimeError(error)
+    return (completed.stdout or "") + (completed.stderr or "")
+
+
+def _run_graphify_agent_cli(
+    settings: Settings,
+    progress_callback: GraphifyProgressCallback | None,
+) -> _StreamingProcessResult:
+    _ensure_graphify_codex_skill(settings, progress_callback)
+    output_path = _graphify_out_dir(settings) / "codex-last-message.txt"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        settings.graphify_cli_command,
+        "exec",
+        "--skip-git-repo-check",
+        "--full-auto",
+        "-C",
+        str(settings.graphify_out_dir),
+        "-o",
+        str(output_path),
+        "-",
+    ]
+    _emit_graphify_progress(progress_callback, "status", f"Starting Graphify through {settings.graphify_cli_command}...")
+    return _run_streaming_process(
+        command=command,
+        cwd=settings.graphify_out_dir,
+        timeout_seconds=settings.graphify_timeout_seconds,
+        progress_callback=progress_callback,
+        stdin_text=_graphify_agent_prompt(settings),
+    )
+
+
+def _graphify_error_message(stderr: str, fallback: str) -> str:
+    lines = [line.strip() for line in (stderr or "").splitlines() if line.strip()]
+    for line in reversed(lines):
+        if line.upper().startswith("ERROR:"):
+            return line
+
+    ignored = {"tokens used"}
+    for line in reversed(lines):
+        if line.lower() in ignored:
+            continue
+        if re.fullmatch(r"[\d,]+", line):
+            continue
+        if line.startswith("202") and " WARN " in line:
+            continue
+        return line
+    return fallback
+
+
+def _append_graphify_log(settings: Settings, page_count: int, source_count: int) -> None:
+    log_path = settings.wiki_dir / "_log.md"
+    if log_path.exists():
+        try:
+            current_log = log_path.read_text(encoding="utf-8")
+        except OSError:
+            current_log = "# Log operativo\n\n"
+    else:
+        current_log = "# Log operativo\n\n"
+
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    entry = (
+        f"\n## {timestamp} - compilazione graphify\n\n"
+        "- Fonti considerate:\n"
+        "  - `raw/` tramite Graphify.\n"
+        "- Output Graphify:\n"
+        "  - `graphify-out/graph.json`\n"
+        "  - `graphify-out/GRAPH_REPORT.md`\n"
+        "  - `graphify-out/wiki/`\n"
+        "- Pagine aggiornate:\n"
+        "  - [[_index|Indice Wiki]]\n"
+        f"  - {page_count} pagine Markdown generate da Graphify.\n"
+        "- Pagine unite o divise:\n"
+        "  - Gestione demandata al clustering del knowledge graph Graphify.\n"
+        "- Dubbi aperti:\n"
+        f"  - Verificare manualmente titoli e community generati da Graphify sui {source_count} file sorgente.\n"
+    )
+    log_path.write_text(current_log.rstrip() + entry + "\n", encoding="utf-8")
+
+
+def _sync_graphify_wiki(settings: Settings, source_count: int) -> int:
+    generated_wiki_dir = _graphify_out_dir(settings) / "wiki"
+    generated_index = generated_wiki_dir / "index.md"
+    if not generated_index.exists():
+        raise FileNotFoundError(f"Graphify wiki not found: {generated_index}")
+
+    settings.wiki_dir.mkdir(parents=True, exist_ok=True)
+    for old_page in settings.wiki_dir.glob("*.md"):
+        if old_page.name in {WIKI_CONFIG_FILE, "_log.md"}:
+            continue
+        old_page.unlink()
+
+    page_count = 0
+    for source_page in sorted(generated_wiki_dir.glob("*.md"), key=lambda item: item.name.lower()):
+        target_name = "_index.md" if source_page.name.lower() == "index.md" else source_page.name
+        shutil.copy2(source_page, settings.wiki_dir / target_name)
+        page_count += 1
+
+    _append_graphify_log(settings, page_count, source_count)
+    return page_count
+
+
+def _enrich_graphify_content(progress_callback: GraphifyProgressCallback | None = None) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "enrich_graphify_content.py"
+    if not script_path.exists():
+        return
+
+    _emit_graphify_progress(progress_callback, "status", "Enriching Graphify nodes with source content excerpts...")
+    completed = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=script_path.parents[1],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if completed.stdout.strip():
+        _emit_graphify_progress(progress_callback, "stdout", completed.stdout.strip())
+    if completed.stderr.strip():
+        _emit_graphify_progress(progress_callback, "stderr", completed.stderr.strip())
+    if completed.returncode != 0:
+        _emit_graphify_progress(
+            progress_callback,
+            "status",
+            "Graphify content enrichment failed; continuing with the generated graph/wiki.",
+        )
+
+
+def run_graphify_wiki_job(
     settings: Settings,
     mode: str = "compile",
     language: str = DEFAULT_WIKI_LANGUAGE,
-    progress_callback: CodexProgressCallback | None = None,
-) -> CodexRunResult:
+    progress_callback: GraphifyProgressCallback | None = None,
+) -> GraphifyRunResult:
     started = time.monotonic()
     language = normalize_wiki_language(language)
-    _emit_codex_progress(progress_callback, "status", "Preparing Codex inputs...")
-    if mode == "togaf":
-        ensure_wiki_layout(settings)
-        ensure_togaf_layout(settings)
-        sources = []
-    else:
-        if mode == "compile":
-            ensure_functional_requirements_layout(settings)
-        sources = prepare_sources_for_codex(settings)
-    _emit_codex_progress(progress_callback, "status", f"Prepared {len(sources)} source file(s) for Codex.")
+    ensure_wiki_layout(settings)
+    ensure_wiki_language_config(settings.wiki_dir, language)
 
-    if mode == "compile" and not sources:
-        _emit_codex_progress(progress_callback, "status", "No source found in raw/.")
-        return CodexRunResult(
+    sources = list_graphify_sources(settings)
+    _emit_graphify_progress(progress_callback, "status", f"Found {len(sources)} source file(s) in raw/.")
+
+    if not sources:
+        _emit_graphify_progress(progress_callback, "status", "No source found in raw/.")
+        return GraphifyRunResult(
             ok=False,
             mode=mode,
             returncode=2,
@@ -1369,82 +1277,147 @@ def run_codex_wiki_job(
             sources=sources,
         )
 
-    language = ensure_wiki_language_config(settings.wiki_dir, language)
-    _emit_codex_progress(progress_callback, "status", f"Building Codex prompt in {wiki_language_label(language)}...")
-    prompt = build_codex_prompt(settings, mode, sources, language)
-    source_text_dir = _source_text_dir(settings)
-    source_text_dir.mkdir(parents=True, exist_ok=True)
-    prompt_path = source_text_dir / "codex-prompt.txt"
-    output_path = source_text_dir / "codex-last-message.txt"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    script = _build_codex_powershell_script(settings, prompt_path, output_path)
-
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
     try:
-        _emit_codex_progress(progress_callback, "status", f"Starting Codex CLI via {settings.codex_shell}...")
-        completed = _run_codex_shell_script(settings, script, progress_callback)
+        if settings.graphify_runner == "cli":
+            cli_completed = _run_graphify_agent_cli(settings, progress_callback)
+            stdout_parts.append(cli_completed.stdout or "")
+            stderr_parts.append(cli_completed.stderr or "")
+            if cli_completed.returncode != 0:
+                elapsed = time.monotonic() - started
+                error_message = _graphify_error_message(cli_completed.stderr, "Graphify CLI run failed.")
+                return GraphifyRunResult(
+                    ok=False,
+                    mode=mode,
+                    returncode=cli_completed.returncode,
+                    elapsed_seconds=elapsed,
+                    message=error_message or "Graphify CLI run failed.",
+                    stdout="".join(stdout_parts),
+                    stderr="".join(stderr_parts),
+                    sources=sources,
+                )
+        elif settings.graphify_runner == "headless":
+            _emit_graphify_progress(progress_callback, "status", "Starting Graphify extraction...")
+            extract_completed = _run_graphify_command(settings, _build_graphify_extract_args(settings), progress_callback)
+            stdout_parts.append(extract_completed.stdout or "")
+            stderr_parts.append(extract_completed.stderr or "")
+            if extract_completed.returncode != 0:
+                elapsed = time.monotonic() - started
+                error_message = _graphify_error_message(extract_completed.stderr, "Graphify extraction failed.")
+                return GraphifyRunResult(
+                    ok=False,
+                    mode=mode,
+                    returncode=extract_completed.returncode,
+                    elapsed_seconds=elapsed,
+                    message=error_message or "Graphify extraction failed.",
+                    stdout="".join(stdout_parts),
+                    stderr="".join(stderr_parts),
+                    sources=sources,
+                )
+
+            graph_path = _graphify_out_dir(settings) / "graph.json"
+            _emit_graphify_progress(progress_callback, "status", "Exporting Graphify wiki...")
+            export_completed = _run_graphify_command(
+                settings,
+                ["export", "wiki", "--graph", str(graph_path)],
+                progress_callback,
+            )
+            stdout_parts.append(export_completed.stdout or "")
+            stderr_parts.append(export_completed.stderr or "")
+            if export_completed.returncode != 0:
+                elapsed = time.monotonic() - started
+                error_message = _graphify_error_message(export_completed.stderr, "Graphify wiki export failed.")
+                return GraphifyRunResult(
+                    ok=False,
+                    mode=mode,
+                    returncode=export_completed.returncode,
+                    elapsed_seconds=elapsed,
+                    message=error_message or "Graphify wiki export failed.",
+                    stdout="".join(stdout_parts),
+                    stderr="".join(stderr_parts),
+                    sources=sources,
+                )
+        else:
+            elapsed = time.monotonic() - started
+            return GraphifyRunResult(
+                ok=False,
+                mode=mode,
+                returncode=2,
+                elapsed_seconds=elapsed,
+                message=f"Unsupported GRAPHIFY_RUNNER={settings.graphify_runner}. Use cli or headless.",
+                stdout="".join(stdout_parts),
+                stderr="".join(stderr_parts),
+                sources=sources,
+            )
+
+        _enrich_graphify_content(progress_callback)
+        _emit_graphify_progress(progress_callback, "status", "Syncing Graphify wiki into knowledge/wiki/...")
+        page_count = _sync_graphify_wiki(settings, len(sources))
     except FileNotFoundError:
         elapsed = time.monotonic() - started
-        _emit_codex_progress(progress_callback, "stderr", f"Local shell not found: {settings.codex_shell}")
-        return CodexRunResult(
+        _emit_graphify_progress(
+            progress_callback,
+            "stderr",
+            "Graphify or the configured CLI command is not available.",
+        )
+        return GraphifyRunResult(
             ok=False,
             mode=mode,
             returncode=127,
             elapsed_seconds=elapsed,
-            message=f"Local shell not found: {settings.codex_shell}",
-            stdout="",
-            stderr="",
+            message="Graphify or the configured CLI command is not available. Install dependencies and verify GRAPHIFY_CLI_COMMAND.",
+            stdout="".join(stdout_parts),
+            stderr="".join(stderr_parts),
             sources=sources,
         )
     except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
-        return CodexRunResult(
+        return GraphifyRunResult(
             ok=False,
             mode=mode,
             returncode=124,
             elapsed_seconds=elapsed,
-            message=f"Codex exceeded the {settings.codex_timeout_seconds}-second timeout.",
+            message=f"Graphify exceeded the {settings.graphify_timeout_seconds}-second timeout.",
             stdout=exc.stdout or "",
             stderr=exc.stderr or "",
             sources=sources,
         )
 
     elapsed = time.monotonic() - started
-    stdout = completed.stdout or ""
-    stderr = completed.stderr or ""
-    ok = completed.returncode == 0
-    returncode = completed.returncode
-    error_message = stderr.strip().splitlines()[-1] if stderr.strip() else ""
+    stdout = "".join(stdout_parts)
+    stderr = "".join(stderr_parts)
+    _emit_graphify_progress(progress_callback, "status", "Graphify completed. Moving compiled sources to processed/...")
+    moved_count, move_errors = move_raw_sources_to_processed(settings.raw_dir)
+    if move_errors:
+        message = (
+            "Graphify updated the wiki, but the move to processed/ is incomplete. "
+            f"Files moved: {moved_count}, errors: {len(move_errors)}."
+        )
+        details = "\n".join(move_errors)
+        stderr = (stderr + "\n\n" if stderr else "") + f"Errors moving files to processed/:\n{details}"
+        _emit_graphify_progress(progress_callback, "status", message)
+        return GraphifyRunResult(
+            ok=False,
+            mode=mode,
+            returncode=3,
+            elapsed_seconds=elapsed,
+            message=message,
+            stdout=stdout,
+            stderr=stderr,
+            sources=sources,
+        )
 
-    if ok and mode == "compile":
-        _emit_codex_progress(progress_callback, "status", "Codex completed. Moving compiled sources to processed/...")
-        moved_count, move_errors = move_raw_sources_to_processed(settings.raw_dir)
-        if move_errors:
-            ok = False
-            returncode = 3
-            message = (
-                "Codex updated the wiki and functional requirements, but the move to processed/ is incomplete. "
-                f"Files moved: {moved_count}, errors: {len(move_errors)}."
-            )
-            details = "\n".join(move_errors)
-            stderr = (stderr + "\n\n" if stderr else "") + f"Errors moving files to processed/:\n{details}"
-        else:
-            message = (
-                "Codex updated the wiki and functional requirements view "
-                f"and moved {moved_count} files to processed/."
-            )
-    elif ok and mode == "togaf":
-        message = "Codex updated the TOGAF wiki from the LLM Wiki."
-    else:
-        message = "Codex updated the wiki." if ok else error_message or "Codex did not complete the compilation."
-    _emit_codex_progress(progress_callback, "status", message)
-
-    return CodexRunResult(
-        ok=ok,
+    message = f"Graphify updated {page_count} wiki page(s) and moved {moved_count} file(s) to processed/."
+    _emit_graphify_progress(progress_callback, "status", message)
+    return GraphifyRunResult(
+        ok=True,
         mode=mode,
-        returncode=returncode,
+        returncode=0,
         elapsed_seconds=elapsed,
         message=message,
         stdout=stdout,
         stderr=stderr,
         sources=sources,
     )
+

@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from pathlib import Path
 import re
 import shutil
@@ -16,11 +16,10 @@ from pydantic import BaseModel
 from .config import get_settings
 from .ingest import is_supported_file, list_source_files
 from .wiki import (
-    CodexRunResult,
     FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME,
+    GraphifyRunResult,
     TOGAF_WIKI_DIR_NAME,
     build_wiki_graph,
-    ensure_functional_requirements_layout,
     ensure_wiki_layout,
     get_functional_requirements_page_payload,
     get_togaf_page_payload,
@@ -29,7 +28,7 @@ from .wiki import (
     list_togaf_artifacts,
     list_wiki_pages,
     read_wiki_page,
-    run_codex_wiki_job,
+    run_graphify_wiki_job,
     search_wiki_pages,
     normalize_wiki_language,
     get_configured_wiki_language,
@@ -38,18 +37,18 @@ from .wiki import (
 )
 
 settings = get_settings()
-app = FastAPI(title="LLM Wiki Codex", version="0.2.0")
+app = FastAPI(title="Graphify Second Brain", version="0.3.0")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
-MAX_CODEX_EVENTS = 180
-codex_lock = threading.Lock()
-codex_state: dict = {
+MAX_GRAPHIFY_EVENTS = 180
+graphify_lock = threading.Lock()
+graphify_state: dict = {
     "running": False,
     "mode": None,
     "language": "it",
     "language_label": WIKI_LANGUAGE_OPTIONS["it"],
-    "message": "No compilation started.",
+    "message": "No Graphify build started.",
     "ok": None,
     "returncode": None,
     "started_at": None,
@@ -63,14 +62,13 @@ codex_state: dict = {
 }
 
 
-class CodexJobRequest(BaseModel):
+class GraphifyJobRequest(BaseModel):
     language: str = "it"
 
 
 @app.on_event("startup")
 def startup_event() -> None:
     ensure_wiki_layout(settings)
-    ensure_functional_requirements_layout(settings)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -100,9 +98,11 @@ def sources_page(request: Request):
             "wiki_dir": str(settings.wiki_dir),
             "source_files": list_source_files(settings.raw_dir, settings.source_dir),
             "processed_files": list_source_files(processed_dir, settings.source_dir),
-            "codex_state": codex_state,
-            "codex_command": settings.codex_command,
-            "codex_shell": settings.codex_shell,
+            "graphify_state": graphify_state,
+            "graphify_out_dir": str(settings.graphify_out_dir),
+            "graphify_timeout_seconds": settings.graphify_timeout_seconds,
+            "graphify_runner": settings.graphify_runner,
+            "graphify_cli_command": settings.graphify_cli_command,
             "wiki_languages": WIKI_LANGUAGE_OPTIONS,
             "selected_wiki_language": configured_language or "it",
             "wiki_language_locked": configured_language is not None,
@@ -328,48 +328,43 @@ def api_requirements_index():
 @app.get("/api/wiki/status")
 def api_wiki_status():
     configured_language = get_configured_wiki_language(settings.wiki_dir)
-    with codex_lock:
-        state = dict(codex_state)
-        state["events"] = list(codex_state.get("events") or [])
+    with graphify_lock:
+        state = dict(graphify_state)
+        state["events"] = list(graphify_state.get("events") or [])
     state["configured_language"] = configured_language
     state["configured_language_label"] = wiki_language_label(configured_language) if configured_language else None
     state["language_locked"] = configured_language is not None
     return JSONResponse(content=state)
 
 
-def _set_codex_state(**values) -> None:
-    with codex_lock:
-        codex_state.update(values)
+def _set_graphify_state(**values) -> None:
+    with graphify_lock:
+        graphify_state.update(values)
 
 
-def _append_codex_event(stream: str, text: str) -> None:
+def _append_graphify_event(stream: str, text: str) -> None:
     clean_text = (text or "").rstrip("\r\n")
     if not clean_text and stream != "status":
         return
 
     timestamp = datetime.now().isoformat(timespec="seconds")
     event = {"time": timestamp, "stream": stream, "text": clean_text}
-    with codex_lock:
-        events = list(codex_state.get("events") or [])
+    with graphify_lock:
+        events = list(graphify_state.get("events") or [])
         events.append(event)
-        codex_state["events"] = events[-MAX_CODEX_EVENTS:]
-        codex_state["last_output_at"] = timestamp
+        graphify_state["events"] = events[-MAX_GRAPHIFY_EVENTS:]
+        graphify_state["last_output_at"] = timestamp
         if stream == "status":
-            codex_state["message"] = clean_text
+            graphify_state["message"] = clean_text
 
 
-def _run_codex_background(mode: str, language: str) -> None:
+def _run_graphify_background(mode: str, language: str) -> None:
     configured_language = get_configured_wiki_language(settings.wiki_dir)
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
-    if mode == "togaf":
-        start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
-    elif mode == "compile":
-        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
-    else:
-        start_message = "Codex is running wiki maintenance from the local shell..."
-    _set_codex_state(
+    start_message = "Graphify is building the knowledge graph and wiki from raw/..."
+    _set_graphify_state(
         running=True,
         mode=mode,
         language=language,
@@ -387,14 +382,14 @@ def _run_codex_background(mode: str, language: str) -> None:
         sources=[],
     )
     try:
-        _append_codex_event("status", start_message)
-        result: CodexRunResult = run_codex_wiki_job(
+        _append_graphify_event("status", start_message)
+        result: GraphifyRunResult = run_graphify_wiki_job(
             settings,
-            mode=mode,
+            mode="compile",
             language=language,
-            progress_callback=_append_codex_event,
+            progress_callback=_append_graphify_event,
         )
-        _set_codex_state(
+        _set_graphify_state(
             running=False,
             message=result.message,
             ok=result.ok,
@@ -406,10 +401,10 @@ def _run_codex_background(mode: str, language: str) -> None:
             sources=[source.__dict__ for source in result.sources],
         )
     except Exception as exc:
-        _append_codex_event("stderr", str(exc))
-        _set_codex_state(
+        _append_graphify_event("stderr", str(exc))
+        _set_graphify_state(
             running=False,
-            message=f"Error during Codex compilation: {exc}",
+            message=f"Error during Graphify build: {exc}",
             ok=False,
             returncode=1,
             finished_at=datetime.now().isoformat(timespec="seconds"),
@@ -420,21 +415,16 @@ def _run_codex_background(mode: str, language: str) -> None:
         )
 
 
-def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
+def _start_graphify_job(mode: str, language: str = "it") -> JSONResponse:
     configured_language = get_configured_wiki_language(settings.wiki_dir)
     if configured_language:
         language = configured_language
     language = normalize_wiki_language(language)
-    if mode == "togaf":
-        start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
-    elif mode == "compile":
-        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
-    else:
-        start_message = "Codex is running wiki maintenance from the local shell..."
-    with codex_lock:
-        if codex_state["running"]:
-            raise HTTPException(status_code=409, detail="A Codex compilation is already running.")
-        codex_state.update(
+    start_message = "Graphify is building the knowledge graph and wiki from raw/..."
+    with graphify_lock:
+        if graphify_state["running"]:
+            raise HTTPException(status_code=409, detail="A Graphify build is already running.")
+        graphify_state.update(
             {
                 "running": True,
                 "mode": mode,
@@ -454,7 +444,7 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
             }
         )
 
-    thread = threading.Thread(target=_run_codex_background, args=(mode, language), daemon=True)
+    thread = threading.Thread(target=_run_graphify_background, args=(mode, language), daemon=True)
     thread.start()
     return JSONResponse(content={"status": "accepted", "mode": mode, "language": language}, status_code=202)
 
@@ -479,18 +469,18 @@ def _source_text_path(title: str) -> Path:
 
 
 @app.post("/api/wiki/compile")
-def api_wiki_compile(payload: CodexJobRequest | None = None):
-    return _start_codex_job("compile", payload.language if payload else "it")
+def api_wiki_compile(payload: GraphifyJobRequest | None = None):
+    return _start_graphify_job("compile", payload.language if payload else "it")
 
 
 @app.post("/api/wiki/togaf")
-def api_wiki_togaf(payload: CodexJobRequest | None = None):
-    return _start_codex_job("togaf", payload.language if payload else "it")
+def api_wiki_togaf(payload: GraphifyJobRequest | None = None):
+    raise HTTPException(status_code=410, detail="Custom TOGAF generation was removed. Use /api/wiki/compile.")
 
 
 @app.post("/api/wiki/lint")
-def api_wiki_lint(payload: CodexJobRequest | None = None):
-    return _start_codex_job("lint", payload.language if payload else "it")
+def api_wiki_lint(payload: GraphifyJobRequest | None = None):
+    raise HTTPException(status_code=410, detail="Custom lint prompt was removed. Use /api/wiki/compile.")
 
 
 @app.post("/api/upload")
@@ -521,3 +511,4 @@ async def api_upload_text(title: str = Form(default="", max_length=120), text: s
     target_path.write_text(content + "\n", encoding="utf-8")
 
     return JSONResponse(content={"status": "ok", "file": target_path.name})
+

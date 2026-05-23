@@ -1,11 +1,11 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <section class="panel sources-panel">
   <div class="panel-header">
     <h1>Source Management</h1>
     <a class="manage-link" href="/">Back to wiki</a>
   </div>
-  <p class="panel-subtitle">Upload to raw/, compile the knowledge base, and automatically update the functional requirements view.</p>
+  <p class="panel-subtitle">Upload to raw/, then let Graphify build the knowledge graph and Markdown wiki.</p>
 
   <div class="upload-card">
     <div class="upload-stack">
@@ -36,40 +36,38 @@
     </label>
 
     <div class="button-row compact">
-      <button type="button" id="compile-wiki">Compile Wiki and Requirements</button>
-      <button type="button" id="compile-togaf" class="secondary">Compile TOGAF</button>
-      <button type="button" id="lint-wiki" class="secondary">Lint</button>
+      <button type="button" id="compile-wiki">Build Graphify Wiki</button>
     </div>
-    <p id="codex-status" class="status-line">{{ codex_state.message }}</p>
-    <div id="codex-live-panel" class="codex-live-panel">
-      <div class="codex-live-header">
-        <div class="codex-live-title">
-          <span id="codex-live-dot" class="codex-live-dot"></span>
-          <span>Codex CLI live status</span>
+    <p id="graphify-status" class="status-line">{{ graphify_state.message }}</p>
+    <div id="graphify-live-panel" class="graphify-live-panel">
+      <div class="graphify-live-header">
+        <div class="graphify-live-title">
+          <span id="graphify-live-dot" class="graphify-live-dot"></span>
+          <span>Graphify live status</span>
         </div>
-        <span id="codex-live-state" class="codex-live-state">Idle</span>
+        <span id="graphify-live-state" class="graphify-live-state">Idle</span>
       </div>
-      <dl class="codex-live-meta">
+      <dl class="graphify-live-meta">
         <div>
           <dt>Mode</dt>
-          <dd id="codex-live-mode">-</dd>
+          <dd id="graphify-live-mode">-</dd>
         </div>
         <div>
           <dt>Started</dt>
-          <dd id="codex-live-started">-</dd>
+          <dd id="graphify-live-started">-</dd>
         </div>
         <div>
           <dt>Finished</dt>
-          <dd id="codex-live-finished">-</dd>
+          <dd id="graphify-live-finished">-</dd>
         </div>
         <div>
           <dt>Return code</dt>
-          <dd id="codex-live-returncode">-</dd>
+          <dd id="graphify-live-returncode">-</dd>
         </div>
       </dl>
-      <pre id="codex-live-output" class="codex-live-output">No Codex run yet.</pre>
+      <pre id="graphify-live-output" class="graphify-live-output">No Graphify run yet.</pre>
     </div>
-    <p class="hint-line">CLI: {{ codex_command }} via {{ codex_shell }}</p>
+    <p class="hint-line">Runner: {{ graphify_runner }}{% if graphify_runner == "cli" %} via {{ graphify_cli_command }}{% endif %} | Output: {{ graphify_out_dir }}\graphify-out | Timeout: {{ graphify_timeout_seconds }}s</p>
   </div>
 
   <div class="source-sections-grid">
@@ -115,5 +113,6 @@
   </div>
 </section>
 
-<script src="/static/sources.js?v=togaf-button"></script>
+<script src="/static/sources.js?v=graphify"></script>
 {% endblock %}
+

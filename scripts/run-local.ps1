@@ -8,9 +8,7 @@ Set-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
 $env:WIKI_SOURCE_DIR = Join-Path (Get-Location) "knowledge"
 $env:WIKI_RAW_DIR = Join-Path (Get-Location) "knowledge\raw"
 $env:WIKI_OUTPUT_DIR = Join-Path (Get-Location) "knowledge\wiki"
-$codexCommand = if (Get-Command codex.cmd -ErrorAction SilentlyContinue) { "codex.cmd" } else { "codex" }
-$env:CODEX_COMMAND = $codexCommand
-$env:CODEX_SHELL = "powershell"
+$env:GRAPHIFY_OUTPUT_DIR = Join-Path (Get-Location) "knowledge"
 $env:APP_HOST = "127.0.0.1"
 $env:APP_PORT = "8000"
 $env:PYTHONPATH = (Get-Location).Path

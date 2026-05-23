@@ -1,26 +1,24 @@
-const form = document.getElementById("upload-form");
+﻿const form = document.getElementById("upload-form");
 const output = document.getElementById("upload-result");
 const textForm = document.getElementById("text-upload-form");
 const textOutput = document.getElementById("text-upload-result");
 const compileButton = document.getElementById("compile-wiki");
-const compileTogafButton = document.getElementById("compile-togaf");
-const lintButton = document.getElementById("lint-wiki");
-const codexStatus = document.getElementById("codex-status");
-const codexLivePanel = document.getElementById("codex-live-panel");
-const codexLiveDot = document.getElementById("codex-live-dot");
-const codexLiveState = document.getElementById("codex-live-state");
-const codexLiveMode = document.getElementById("codex-live-mode");
-const codexLiveStarted = document.getElementById("codex-live-started");
-const codexLiveFinished = document.getElementById("codex-live-finished");
-const codexLiveReturncode = document.getElementById("codex-live-returncode");
-const codexLiveOutput = document.getElementById("codex-live-output");
+const graphifyStatus = document.getElementById("graphify-status");
+const graphifyLivePanel = document.getElementById("graphify-live-panel");
+const graphifyLiveDot = document.getElementById("graphify-live-dot");
+const graphifyLiveState = document.getElementById("graphify-live-state");
+const graphifyLiveMode = document.getElementById("graphify-live-mode");
+const graphifyLiveStarted = document.getElementById("graphify-live-started");
+const graphifyLiveFinished = document.getElementById("graphify-live-finished");
+const graphifyLiveReturncode = document.getElementById("graphify-live-returncode");
+const graphifyLiveOutput = document.getElementById("graphify-live-output");
 const wikiLanguage = document.getElementById("wiki-language");
 const sourceList = document.getElementById("source-list");
 const sourceCount = document.getElementById("source-count");
 const processedList = document.getElementById("processed-list");
 const processedCount = document.getElementById("processed-count");
 
-let codexWasRunning = false;
+let graphifyWasRunning = false;
 const storedWikiLanguage = window.localStorage.getItem("wiki-language");
 if (wikiLanguage && storedWikiLanguage && !wikiLanguage.disabled) {
   wikiLanguage.value = storedWikiLanguage;
@@ -47,60 +45,60 @@ function shortTime(value) {
   return String(value).replace("T", " ");
 }
 
-function renderCodexLive(data) {
-  if (!codexLivePanel) {
+function renderGraphifyLive(data) {
+  if (!graphifyLivePanel) {
     return;
   }
 
   const isRunning = Boolean(data.running);
   const ok = data.ok;
-  codexLivePanel.classList.toggle("is-running", isRunning);
-  codexLivePanel.classList.toggle("is-ok", !isRunning && ok === true);
-  codexLivePanel.classList.toggle("is-error", !isRunning && ok === false);
+  graphifyLivePanel.classList.toggle("is-running", isRunning);
+  graphifyLivePanel.classList.toggle("is-ok", !isRunning && ok === true);
+  graphifyLivePanel.classList.toggle("is-error", !isRunning && ok === false);
 
-  if (codexLiveDot) {
-    codexLiveDot.className = "codex-live-dot";
+  if (graphifyLiveDot) {
+    graphifyLiveDot.className = "graphify-live-dot";
     if (isRunning) {
-      codexLiveDot.classList.add("running");
+      graphifyLiveDot.classList.add("running");
     } else if (ok === true) {
-      codexLiveDot.classList.add("ok");
+      graphifyLiveDot.classList.add("ok");
     } else if (ok === false) {
-      codexLiveDot.classList.add("error");
+      graphifyLiveDot.classList.add("error");
     }
   }
 
-  if (codexLiveState) {
+  if (graphifyLiveState) {
     if (isRunning) {
-      codexLiveState.textContent = "Running";
+      graphifyLiveState.textContent = "Running";
     } else if (ok === true) {
-      codexLiveState.textContent = "Completed";
+      graphifyLiveState.textContent = "Completed";
     } else if (ok === false) {
-      codexLiveState.textContent = "Failed";
+      graphifyLiveState.textContent = "Failed";
     } else {
-      codexLiveState.textContent = "Idle";
+      graphifyLiveState.textContent = "Idle";
     }
   }
 
-  if (codexLiveMode) {
-    codexLiveMode.textContent = data.mode || "-";
+  if (graphifyLiveMode) {
+    graphifyLiveMode.textContent = data.mode || "-";
   }
-  if (codexLiveStarted) {
-    codexLiveStarted.textContent = shortTime(data.started_at);
+  if (graphifyLiveStarted) {
+    graphifyLiveStarted.textContent = shortTime(data.started_at);
   }
-  if (codexLiveFinished) {
-    codexLiveFinished.textContent = shortTime(data.finished_at || data.last_output_at);
+  if (graphifyLiveFinished) {
+    graphifyLiveFinished.textContent = shortTime(data.finished_at || data.last_output_at);
   }
-  if (codexLiveReturncode) {
-    codexLiveReturncode.textContent = data.returncode === null || data.returncode === undefined ? "-" : String(data.returncode);
+  if (graphifyLiveReturncode) {
+    graphifyLiveReturncode.textContent = data.returncode === null || data.returncode === undefined ? "-" : String(data.returncode);
   }
 
-  if (codexLiveOutput) {
+  if (graphifyLiveOutput) {
     const events = Array.isArray(data.events) ? data.events : [];
     if (events.length === 0) {
-      codexLiveOutput.textContent = data.stdout || data.stderr || "No Codex run yet.";
+      graphifyLiveOutput.textContent = data.stdout || data.stderr || "No Graphify run yet.";
       return;
     }
-    codexLiveOutput.textContent = events
+    graphifyLiveOutput.textContent = events
       .map((event) => {
         const time = shortTime(event.time).slice(11) || "--:--:--";
         const stream = (event.stream || "status").toUpperCase().padEnd(6, " ");
@@ -108,13 +106,13 @@ function renderCodexLive(data) {
       })
       .join("\n");
     if (isRunning) {
-      codexLiveOutput.scrollTop = codexLiveOutput.scrollHeight;
+      graphifyLiveOutput.scrollTop = graphifyLiveOutput.scrollHeight;
     }
   }
 }
 
-async function refreshCodexStatus() {
-  if (!codexStatus) {
+async function refreshGraphifyStatus() {
+  if (!graphifyStatus) {
     return;
   }
 
@@ -129,8 +127,8 @@ async function refreshCodexStatus() {
   if (data.language_label) {
     message = `${message} Language: ${data.language_label}.`;
   }
-  codexStatus.textContent = message;
-  renderCodexLive(data);
+  graphifyStatus.textContent = message;
+  renderGraphifyLive(data);
 
   if (wikiLanguage && data.language_locked) {
     wikiLanguage.value = data.configured_language || wikiLanguage.value;
@@ -140,28 +138,21 @@ async function refreshCodexStatus() {
   if (compileButton) {
     compileButton.disabled = Boolean(data.running);
   }
-  if (compileTogafButton) {
-    compileTogafButton.disabled = Boolean(data.running);
-  }
-  if (lintButton) {
-    lintButton.disabled = Boolean(data.running);
-  }
-
   if (data.running) {
-    codexWasRunning = true;
-    setTimeout(refreshCodexStatus, 1800);
-  } else if (codexWasRunning) {
-    codexWasRunning = false;
+    graphifyWasRunning = true;
+    setTimeout(refreshGraphifyStatus, 1800);
+  } else if (graphifyWasRunning) {
+    graphifyWasRunning = false;
     setTimeout(() => window.location.reload(), 700);
   }
 }
 
-async function startCodexJob(kind) {
-  if (!codexStatus) {
+async function startGraphifyJob(kind) {
+  if (!graphifyStatus) {
     return;
   }
-  codexStatus.textContent = "Starting Codex...";
-  renderCodexLive({
+  graphifyStatus.textContent = "Starting Graphify...";
+  renderGraphifyLive({
     running: true,
     mode: kind,
     ok: null,
@@ -169,14 +160,9 @@ async function startCodexJob(kind) {
     finished_at: null,
     last_output_at: null,
     returncode: null,
-    events: [{ time: new Date().toISOString().slice(0, 19), stream: "status", text: "Starting Codex..." }],
+    events: [{ time: new Date().toISOString().slice(0, 19), stream: "status", text: "Starting Graphify..." }],
   });
-  const endpoints = {
-    compile: "/api/wiki/compile",
-    togaf: "/api/wiki/togaf",
-    lint: "/api/wiki/lint",
-  };
-  const endpoint = endpoints[kind] || endpoints.compile;
+  const endpoint = "/api/wiki/compile";
   const language = wikiLanguage?.value || "it";
   if (wikiLanguage && !wikiLanguage.disabled) {
     window.localStorage.setItem("wiki-language", language);
@@ -192,25 +178,17 @@ async function startCodexJob(kind) {
     });
     const data = await resp.json();
     if (!resp.ok) {
-      codexStatus.textContent = `Error: ${data.detail || "operation not started"}`;
+      graphifyStatus.textContent = `Error: ${data.detail || "operation not started"}`;
       return;
     }
-    refreshCodexStatus();
+    refreshGraphifyStatus();
   } catch (err) {
-    codexStatus.textContent = `Network error: ${err}`;
+    graphifyStatus.textContent = `Network error: ${err}`;
   }
 }
 
 if (compileButton) {
-  compileButton.addEventListener("click", () => startCodexJob("compile"));
-}
-
-if (compileTogafButton) {
-  compileTogafButton.addEventListener("click", () => startCodexJob("togaf"));
-}
-
-if (lintButton) {
-  lintButton.addEventListener("click", () => startCodexJob("lint"));
+  compileButton.addEventListener("click", () => startGraphifyJob("compile"));
 }
 
 if (form && output) {
@@ -362,4 +340,5 @@ if (processedList && output) {
 
 updateSourceCount();
 updateProcessedCount();
-refreshCodexStatus();
+refreshGraphifyStatus();
+

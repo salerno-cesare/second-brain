@@ -3,20 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ title if title else "LLM Wiki Codex" }}</title>
+  <title>{{ title if title else "Graphify Second Brain" }}</title>
   <link rel="stylesheet" href="/static/style.css?v=obsidian">
 </head>
 <body>
   <header class="hero">
     <div class="hero-inner">
-      <a class="brand" href="/">LLM Wiki Codex</a>
+      <a class="brand" href="/">Graphify Second Brain</a>
       <nav class="top-nav" aria-label="Main navigation">
         <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Wiki</a>
-        <a href="/togaf" class="{% if request.url.path.startswith('/togaf') %}active{% endif %}">TOGAF</a>
-        <a href="/requirements" class="{% if request.url.path.startswith('/requirements') %}active{% endif %}">Requirements</a>
         <a href="/sources" class="{% if request.url.path.startswith('/sources') %}active{% endif %}">Sources</a>
       </nav>
-      <p class="subtitle">Markdown vault compiled by Codex CLI.</p>
+      <p class="subtitle">Markdown vault generated from a Graphify knowledge graph.</p>
     </div>
   </header>
 

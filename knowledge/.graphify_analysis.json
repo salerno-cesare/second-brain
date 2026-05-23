@@ -1,0 +1,241 @@
+{
+  "communities": {
+    "0": [
+      "requisiti_scolastica_breadcrumb_scolastico",
+      "requisiti_scolastica_testata_listato_libri_scolastici",
+      "requisiti_scolastica_wishlist_lista_libri",
+      "user_story_cartoleria_attributi_pdp_cartoleria",
+      "user_story_cartoleria_backoffice_associazione_ean",
+      "user_story_cartoleria_breadcrumb_pdp_cartoleria",
+      "user_story_cartoleria_modalita_aggiunta",
+      "user_story_cartoleria_modalita_sostituzione",
+      "user_story_cartoleria_nuova_alberatura_cartoleria"
+    ],
+    "1": [
+      "requisiti_scolastica_sezione_fondo_umbraco",
+      "user_story_cartoleria_blocco_alberatura_programmatico",
+      "user_story_cartoleria_corpo_centrale_cms",
+      "user_story_cartoleria_home_categoria_cartoleria",
+      "user_story_cartoleria_menu_navigazione_cms",
+      "user_story_cartoleria_pagine_intermedie_alberatura",
+      "user_story_cartoleria_rich_relevance_algonomy",
+      "user_story_cartoleria_template_pagina_alberatura"
+    ],
+    "2": [
+      "requisiti_scolastica_asset_cartina_italia_cms_libraccio",
+      "requisiti_scolastica_document",
+      "requisiti_scolastica_pagina_ricerca_scolastica_prefiltrata",
+      "requisiti_scolastica_pagina_scolastica",
+      "requisiti_scolastica_ricerca_cerca_libro",
+      "requisiti_scolastica_ricerca_cerca_scuola",
+      "requisiti_scolastica_testata_informativa",
+      "requisiti_scolastica_zero_risultati_ricerca_scuola"
+    ],
+    "3": [
+      "user_story_cartoleria_filtri_advanced_search",
+      "user_story_cartoleria_governance_pagine_umbraco",
+      "user_story_cartoleria_id_nuova_alberatura",
+      "user_story_cartoleria_listing_categoria_foglia",
+      "user_story_cartoleria_no_fallback_automatico",
+      "user_story_cartoleria_tabella_sql_server_alberatura",
+      "user_story_cartoleria_template_after_search"
+    ],
+    "4": [
+      "requisiti_scolastica_colonna_editoriale_cms_libraccio",
+      "user_story_cartoleria_design_to_cost",
+      "user_story_cartoleria_document",
+      "user_story_cartoleria_gestione_variazioni_perimetro",
+      "user_story_cartoleria_hero_slider_promozionale",
+      "user_story_cartoleria_offerta_libraccio_replatforming",
+      "user_story_cartoleria_riuso_componenti_esistenti"
+    ],
+    "5": [
+      "requisiti_scolastica_esclusione_modali_listato_prodotti",
+      "requisiti_scolastica_limitazione_redesign_legacy",
+      "requisiti_scolastica_listato_prodotti_legacy",
+      "requisiti_scolastica_motore_promozionale_pdp",
+      "requisiti_scolastica_popup_informativi_vecchio_sito",
+      "user_story_cartoleria_redesign_pdp_plp_legacy",
+      "user_story_cartoleria_scansione_automatica_isbn"
+    ],
+    "6": [
+      "requisiti_scolastica_aggiungi_selezione_carrello",
+      "requisiti_scolastica_blocco_la_tua_scelta_sticky",
+      "requisiti_scolastica_calcolo_risparmio_usato",
+      "requisiti_scolastica_riepilogo_la_tua_selezione",
+      "requisiti_scolastica_selezione_scelta_conveniente",
+      "requisiti_scolastica_selezione_solo_nuovo"
+    ],
+    "7": [
+      "user_story_cartoleria_like_for_like_search",
+      "user_story_cartoleria_migrazione_catalogo_nuova_architettura",
+      "user_story_cartoleria_nuovo_frontend_blazor",
+      "user_story_cartoleria_seo_geo",
+      "user_story_cartoleria_servizi_backend"
+    ],
+    "8": [
+      "user_story_cartoleria_application_maintenance",
+      "user_story_cartoleria_periodo_osservazione_post_golive"
+    ],
+    "9": [
+      "requisiti_scolastica_libraccio_ti_suggerisce"
+    ],
+    "10": [
+      "requisiti_scolastica_sezione_puoi_pagare_cms_libraccio"
+    ]
+  },
+  "cohesion": {
+    "0": 0.2222222222222222,
+    "1": 0.25,
+    "2": 0.32142857142857145,
+    "3": 0.2857142857142857,
+    "4": 0.2857142857142857,
+    "5": 0.2857142857142857,
+    "6": 0.4,
+    "7": 0.4,
+    "8": 1.0,
+    "9": 1.0,
+    "10": 1.0
+  },
+  "gods": [
+    {
+      "id": "requisiti_scolastica_document",
+      "label": "Requisiti Scolastica",
+      "degree": 10
+    },
+    {
+      "id": "requisiti_scolastica_riepilogo_la_tua_selezione",
+      "label": "Riepilogo La tua selezione",
+      "degree": 7
+    },
+    {
+      "id": "user_story_cartoleria_template_pagina_alberatura",
+      "label": "Template pagina alberatura",
+      "degree": 7
+    },
+    {
+      "id": "requisiti_scolastica_limitazione_redesign_legacy",
+      "label": "Limitazione redesign tecnologia legacy",
+      "degree": 4
+    },
+    {
+      "id": "user_story_cartoleria_nuova_alberatura_cartoleria",
+      "label": "Nuova alberatura Cartoleria",
+      "degree": 4
+    },
+    {
+      "id": "user_story_cartoleria_governance_pagine_umbraco",
+      "label": "Governance pagine Umbraco",
+      "degree": 4
+    },
+    {
+      "id": "requisiti_scolastica_ricerca_cerca_libro",
+      "label": "Ricerca Cerca Libro",
+      "degree": 3
+    },
+    {
+      "id": "requisiti_scolastica_ricerca_cerca_scuola",
+      "label": "Ricerca Cerca Scuola",
+      "degree": 3
+    },
+    {
+      "id": "requisiti_scolastica_testata_listato_libri_scolastici",
+      "label": "Testata listato libri scolastici",
+      "degree": 3
+    },
+    {
+      "id": "requisiti_scolastica_listato_prodotti_legacy",
+      "label": "Listato prodotti legacy condiviso",
+      "degree": 3
+    }
+  ],
+  "surprises": [
+    {
+      "source": "Pagina ricerca scolastica prefiltrata",
+      "target": "Search like-for-like as-is",
+      "source_files": [
+        "raw/graphify-out/converted/Requisiti Scolastica_9caf5dda.md",
+        "raw/graphify-out/converted/User Story Cartoleria_bce216f8.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; bridges separate communities; semantically similar concepts with no structural link"
+    },
+    {
+      "source": "Limitazione redesign tecnologia legacy",
+      "target": "Riuso componenti esistenti",
+      "source_files": [
+        "raw/graphify-out/converted/Requisiti Scolastica_9caf5dda.md",
+        "raw/graphify-out/converted/User Story Cartoleria_bce216f8.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; bridges separate communities; semantically similar concepts with no structural link"
+    },
+    {
+      "source": "Colonna editoriale CMS Libraccio",
+      "target": "Hero slider promozionale",
+      "source_files": [
+        "raw/graphify-out/converted/Requisiti Scolastica_9caf5dda.md",
+        "raw/graphify-out/converted/User Story Cartoleria_bce216f8.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; semantically similar concepts with no structural link"
+    },
+    {
+      "source": "Sezione in fondo pagina Umbraco",
+      "target": "Corpo centrale componenti CMS",
+      "source_files": [
+        "raw/graphify-out/converted/Requisiti Scolastica_9caf5dda.md",
+        "raw/graphify-out/converted/User Story Cartoleria_bce216f8.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; semantically similar concepts with no structural link"
+    },
+    {
+      "source": "Breadcrumb scolastico",
+      "target": "Breadcrumb PDP Cartoleria",
+      "source_files": [
+        "raw/graphify-out/converted/Requisiti Scolastica_9caf5dda.md",
+        "raw/graphify-out/converted/User Story Cartoleria_bce216f8.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; semantically similar concepts with no structural link"
+    }
+  ],
+  "questions": [
+    {
+      "type": "ambiguous_edge",
+      "question": "What is the exact relationship between `Limitazione redesign tecnologia legacy` and `Motore promozionale PDP`?",
+      "why": "Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low."
+    },
+    {
+      "type": "ambiguous_edge",
+      "question": "What is the exact relationship between `Riepilogo La tua selezione` and `Motore promozionale PDP`?",
+      "why": "Edge tagged AMBIGUOUS (relation: references) - confidence is low."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `Requisiti Scolastica` connect `Scolastica Search` to `Cartoleria Navigation`, `CMS Category Pages`, `Replatforming Scope`, `Legacy Product Lists`, `Book Selection Cart`?",
+      "why": "High betweenness centrality (0.647) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `Sezione in fondo pagina Umbraco` connect `CMS Category Pages` to `Scolastica Search`?",
+      "why": "High betweenness centrality (0.332) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `Template pagina alberatura` connect `CMS Category Pages` to `Search Governance`?",
+      "why": "High betweenness centrality (0.324) - this node is a cross-community bridge."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `Asset cartina Italia CMS Libraccio`, `Zero risultati ricerca scuola`, `Aggiungi lista alla wishlist` to the rest of the system?",
+      "why": "27 weakly-connected nodes found - possible documentation gaps or missing edges."
+    }
+  ]
+}

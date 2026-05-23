@@ -1,8 +1,8 @@
-const form = document.getElementById("upload-form");
+﻿const form = document.getElementById("upload-form");
 const output = document.getElementById("upload-result");
 const compileButton = document.getElementById("compile-wiki");
 const lintButton = document.getElementById("lint-wiki");
-const codexStatus = document.getElementById("codex-status");
+const graphifyStatus = document.getElementById("graphify-status");
 const shell = document.querySelector(".obsidian-shell");
 const pageList = document.getElementById("page-list");
 const searchInput = document.getElementById("vault-search");
@@ -13,7 +13,7 @@ const backlinkList = document.getElementById("backlink-list");
 const outlinkList = document.getElementById("outlink-list");
 const graphSvg = document.getElementById("wiki-graph");
 
-let codexWasRunning = false;
+let graphifyWasRunning = false;
 let currentSlug = "";
 let graphData = null;
 let searchTimer = null;
@@ -304,8 +304,8 @@ if (form && output) {
   });
 }
 
-async function refreshCodexStatus() {
-  if (!codexStatus) {
+async function refreshGraphifyStatus() {
+  if (!graphifyStatus) {
     return;
   }
 
@@ -317,7 +317,7 @@ async function refreshCodexStatus() {
   } else if (data.finished_at) {
     message = `${message} Finished: ${data.finished_at}.`;
   }
-  codexStatus.textContent = message;
+  graphifyStatus.textContent = message;
 
   if (compileButton) {
     compileButton.disabled = Boolean(data.running);
@@ -327,40 +327,40 @@ async function refreshCodexStatus() {
   }
 
   if (data.running) {
-    codexWasRunning = true;
-    setTimeout(refreshCodexStatus, 1800);
-  } else if (codexWasRunning) {
-    codexWasRunning = false;
+    graphifyWasRunning = true;
+    setTimeout(refreshGraphifyStatus, 1800);
+  } else if (graphifyWasRunning) {
+    graphifyWasRunning = false;
     setTimeout(() => window.location.reload(), 700);
   }
 }
 
-async function startCodexJob(kind) {
-  if (!codexStatus) {
+async function startGraphifyJob(kind) {
+  if (!graphifyStatus) {
     return;
   }
-  codexStatus.textContent = "Starting Codex...";
+  graphifyStatus.textContent = "Starting Graphify...";
   const endpoint = kind === "lint" ? "/api/wiki/lint" : "/api/wiki/compile";
 
   try {
     const resp = await fetch(endpoint, { method: "POST" });
     const data = await resp.json();
     if (!resp.ok) {
-      codexStatus.textContent = `Error: ${data.detail || "operation not started"}`;
+      graphifyStatus.textContent = `Error: ${data.detail || "operation not started"}`;
       return;
     }
-    refreshCodexStatus();
+    refreshGraphifyStatus();
   } catch (err) {
-    codexStatus.textContent = `Network error: ${err}`;
+    graphifyStatus.textContent = `Network error: ${err}`;
   }
 }
 
 if (compileButton) {
-  compileButton.addEventListener("click", () => startCodexJob("compile"));
+  compileButton.addEventListener("click", () => startGraphifyJob("compile"));
 }
 
 if (lintButton) {
-  lintButton.addEventListener("click", () => startCodexJob("lint"));
+  lintButton.addEventListener("click", () => startGraphifyJob("lint"));
 }
 
 if (searchInput) {
@@ -379,9 +379,10 @@ window.addEventListener("hashchange", () => {
 
 basePages = collectBasePages();
 renderPageButtons(basePages);
-refreshCodexStatus();
+refreshGraphifyStatus();
 
 const startSlug = window.location.hash.slice(1) || shell?.dataset.initialSlug || basePages[0]?.slug;
 if (startSlug) {
   navigateToPage(startSlug);
 }
+

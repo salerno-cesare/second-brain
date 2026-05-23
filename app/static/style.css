@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap");
+﻿@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap");
 
 :root {
   --bg: #111620;
@@ -575,7 +575,7 @@ pre {
   overflow-wrap: anywhere;
 }
 
-.codex-live-panel {
+.graphify-live-panel {
   display: grid;
   gap: 0.65rem;
   border: 1px solid rgba(124, 155, 194, 0.26);
@@ -584,26 +584,26 @@ pre {
   padding: 0.75rem;
 }
 
-.codex-live-panel.is-running {
+.graphify-live-panel.is-running {
   border-color: rgba(78, 232, 168, 0.42);
 }
 
-.codex-live-panel.is-ok {
+.graphify-live-panel.is-ok {
   border-color: rgba(78, 232, 168, 0.34);
 }
 
-.codex-live-panel.is-error {
+.graphify-live-panel.is-error {
   border-color: rgba(240, 129, 129, 0.46);
 }
 
-.codex-live-header {
+.graphify-live-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
 
-.codex-live-title {
+.graphify-live-title {
   display: inline-flex;
   align-items: center;
   min-width: 0;
@@ -612,7 +612,7 @@ pre {
   font-weight: 700;
 }
 
-.codex-live-state {
+.graphify-live-state {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.72rem;
@@ -621,7 +621,7 @@ pre {
   text-transform: uppercase;
 }
 
-.codex-live-dot {
+.graphify-live-dot {
   width: 9px;
   height: 9px;
   border-radius: 999px;
@@ -629,33 +629,33 @@ pre {
   box-shadow: 0 0 0 4px rgba(124, 141, 164, 0.12);
 }
 
-.codex-live-dot.running {
+.graphify-live-dot.running {
   background: var(--accent);
   box-shadow: 0 0 0 4px rgba(78, 232, 168, 0.14);
   animation: pulse-live-dot 1.3s ease-in-out infinite;
 }
 
-.codex-live-dot.ok {
+.graphify-live-dot.ok {
   background: var(--accent);
 }
 
-.codex-live-dot.error {
+.graphify-live-dot.error {
   background: var(--danger);
   box-shadow: 0 0 0 4px rgba(240, 129, 129, 0.14);
 }
 
-.codex-live-meta {
+.graphify-live-meta {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.55rem;
   margin: 0;
 }
 
-.codex-live-meta div {
+.graphify-live-meta div {
   min-width: 0;
 }
 
-.codex-live-meta dt {
+.graphify-live-meta dt {
   color: var(--faint);
   font-size: 0.68rem;
   font-weight: 700;
@@ -663,7 +663,7 @@ pre {
   text-transform: uppercase;
 }
 
-.codex-live-meta dd {
+.graphify-live-meta dd {
   margin: 0.14rem 0 0;
   color: var(--ink);
   font-size: 0.76rem;
@@ -672,7 +672,7 @@ pre {
   white-space: nowrap;
 }
 
-.codex-live-output {
+.graphify-live-output {
   max-height: 260px;
   min-height: 112px;
   margin: 0;
@@ -928,7 +928,7 @@ button.danger:hover {
     grid-template-columns: 1fr;
   }
 
-  .codex-live-meta {
+  .graphify-live-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -969,7 +969,7 @@ button.danger:hover {
     display: none;
   }
 
-  .codex-live-meta {
+  .graphify-live-meta {
     grid-template-columns: 1fr;
   }
 }
@@ -994,3 +994,4 @@ button.danger:hover {
     opacity: 1;
   }
 }
+

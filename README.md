@@ -20,6 +20,7 @@ Non ci sono piu' SQLite, FTS5, indicizzazione o retrieval API: l'app serve solo 
 - Compilazione separata di una vista TOGAF alternativa, derivata dalla LLM Wiki, con artefatti navigabili per fase ADM, dominio e tipo.
 - Lint/manutenzione della wiki esistente.
 - Navigazione web delle pagine in `knowledge/wiki/`.
+- Sezione **Dubbi aperti** con form di chiarimento: ogni risposta crea una fonte Markdown in `knowledge/raw/chiarimenti-dubbi/` con testata operativa completa per la compilazione successiva.
 - Navigazione web degli artefatti TOGAF da `/togaf` e dei requisiti funzionali da `/requirements`.
 
 ## Requisiti
@@ -82,6 +83,7 @@ Variabili principali in `.env.example`:
 - `GET /api/sources`
 - `GET /api/wiki/pages`
 - `GET /api/wiki/status`
+- `GET /api/wiki/doubts`
 - `GET /api/togaf/pages`
 - `GET /api/togaf/page/{slug}`
 - `GET /api/togaf/search`
@@ -95,5 +97,6 @@ Variabili principali in `.env.example`:
 - `POST /api/wiki/compile`
 - `POST /api/wiki/togaf`
 - `POST /api/wiki/lint`
+- `POST /api/wiki/doubts/{doubt_id}/resolve`
 - `POST /api/upload`
 - `POST /api/upload-text`

@@ -58,6 +58,7 @@ Best practice obbligatorie per la LLM Wiki:
 23. Non riscrivere l'intera wiki senza motivo: modifica solo i file Markdown necessari per ottenere un miglioramento netto e verificabile.
 24. Non modificare codice applicativo, database, raw/ o .codex_sources/.
 25. Non modificare wiki/_config.md: contiene la lingua strutturale della wiki, gestita dall'applicazione e bloccata dopo la prima compilazione.
+26. Se tra le fonti raw trovi una nota con frontmatter `kind: chiarimento-dubbio`, trattala come chiarimento mirato di un dubbio gia' presente nella wiki: usa i campi `wiki_page`, `wiki_section`, `doubt_id` e il testo in "Chiarimento fornito dall'utente" per aggiornare solo la pagina indicata, rimuovendo il dubbio dalla sezione dei dubbi solo se il chiarimento e' sufficiente e non contraddice altre pagine.
 
 Regole obbligatorie per la wiki alternativa TOGAF, da applicare solo se mode = togaf:
 1. Mantieni wiki/togaf/_index.md come indice navigabile degli artefatti TOGAF, raggruppato secondo la sequenza fase -> deliverable della sezione "Struttura artefatti TOGAF di riferimento".

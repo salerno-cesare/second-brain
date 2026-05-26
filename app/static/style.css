@@ -715,7 +715,7 @@ pre {
   margin-top: 0.2rem;
 }
 
-.graph-section {
+.doubt-section {
   border-bottom: 0;
 }
 
@@ -776,6 +776,75 @@ pre {
   font-size: 8px;
   text-anchor: middle;
   pointer-events: none;
+}
+
+.doubt-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.doubt-item {
+  border: 1px solid rgba(124, 155, 194, 0.2);
+  border-radius: 8px;
+  background: rgba(8, 13, 21, 0.42);
+  padding: 0.48rem 0.55rem;
+}
+
+.doubt-item summary {
+  display: grid;
+  gap: 0.22rem;
+  cursor: pointer;
+}
+
+.doubt-summary {
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.doubt-item summary small,
+.doubt-status {
+  color: var(--faint);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.doubt-page-link {
+  display: inline-flex;
+  margin: 0.48rem 0 0.3rem;
+  color: var(--accent-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.doubt-page-link:hover {
+  text-decoration: underline;
+}
+
+.doubt-form {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.doubt-form textarea {
+  min-height: 96px;
+  font-size: 0.76rem;
+}
+
+.doubt-form button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0.38rem 0.55rem;
+  font-size: 0.76rem;
+}
+
+.doubt-status {
+  min-height: 1rem;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .panel {

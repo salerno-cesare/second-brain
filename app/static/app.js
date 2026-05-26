@@ -12,6 +12,7 @@ const noteContent = document.getElementById("note-content");
 const backlinkList = document.getElementById("backlink-list");
 const outlinkList = document.getElementById("outlink-list");
 const graphSvg = document.getElementById("wiki-graph");
+const doubtList = document.getElementById("doubt-list");
 
 let codexWasRunning = false;
 let currentSlug = "";
@@ -277,6 +278,123 @@ async function runSearch(query) {
   renderPageButtons(data.results || []);
 }
 
+function renderDoubtList(doubts) {
+  if (!doubtList) {
+    return;
+  }
+
+  doubtList.textContent = "";
+  if (!doubts || doubts.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-list";
+    empty.textContent = "Nessun dubbio aperto.";
+    doubtList.appendChild(empty);
+    return;
+  }
+
+  doubts.forEach((doubt, index) => {
+    const item = document.createElement("details");
+    item.className = "doubt-item";
+    item.open = index === 0;
+
+    const summary = document.createElement("summary");
+    const title = document.createElement("span");
+    title.className = "doubt-summary";
+    title.textContent = doubt.text;
+    const meta = document.createElement("small");
+    meta.textContent = `${doubt.page_title} | ${doubt.section}`;
+    summary.appendChild(title);
+    summary.appendChild(meta);
+    item.appendChild(summary);
+
+    const pageLink = document.createElement("a");
+    pageLink.className = "doubt-page-link";
+    pageLink.href = doubt.page_url || `/#${doubt.page_slug}`;
+    pageLink.textContent = `${doubt.rel_path}:${doubt.line}`;
+    item.appendChild(pageLink);
+
+    const formEl = document.createElement("form");
+    formEl.className = "doubt-form";
+
+    const textarea = document.createElement("textarea");
+    textarea.name = "resolution";
+    textarea.maxLength = 500000;
+    textarea.required = true;
+    textarea.rows = 5;
+    textarea.placeholder = "Scrivi il chiarimento per questo dubbio";
+    formEl.appendChild(textarea);
+
+    const button = document.createElement("button");
+    button.type = "submit";
+    button.textContent = "Salva chiarimento";
+    formEl.appendChild(button);
+
+    const status = document.createElement("p");
+    status.className = "doubt-status";
+    formEl.appendChild(status);
+
+    formEl.addEventListener("submit", (event) => submitDoubtResolution(event, doubt, textarea, button, status));
+    item.appendChild(formEl);
+    doubtList.appendChild(item);
+  });
+}
+
+async function submitDoubtResolution(event, doubt, textarea, button, status) {
+  event.preventDefault();
+  const resolution = textarea.value.trim();
+  if (!resolution) {
+    status.textContent = "Inserisci un chiarimento.";
+    return;
+  }
+
+  button.disabled = true;
+  status.textContent = "Salvataggio...";
+
+  try {
+    const resp = await fetch(`/api/wiki/doubts/${encodeURIComponent(doubt.id)}/resolve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ resolution }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      status.textContent = `Errore: ${data.detail || "salvataggio non riuscito"}`;
+      button.disabled = false;
+      return;
+    }
+
+    textarea.disabled = true;
+    button.textContent = "Salvato";
+    status.textContent = `File raw creato: ${data.file}`;
+  } catch (err) {
+    status.textContent = `Errore di rete: ${err}`;
+    button.disabled = false;
+  }
+}
+
+async function loadDoubts() {
+  if (!doubtList) {
+    return;
+  }
+
+  try {
+    const resp = await fetch("/api/wiki/doubts");
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || "dubbi non disponibili");
+    }
+    renderDoubtList(data.doubts || []);
+  } catch (err) {
+    doubtList.textContent = "";
+    const empty = document.createElement("div");
+    empty.className = "empty-list";
+    empty.textContent = `Impossibile leggere i dubbi: ${err.message}`;
+    doubtList.appendChild(empty);
+  }
+}
+
 if (form && output) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -380,6 +498,7 @@ window.addEventListener("hashchange", () => {
 basePages = collectBasePages();
 renderPageButtons(basePages);
 refreshCodexStatus();
+loadDoubts();
 
 const startSlug = window.location.hash.slice(1) || shell?.dataset.initialSlug || basePages[0]?.slug;
 if (startSlug) {

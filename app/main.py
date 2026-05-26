@@ -11,7 +11,7 @@ from fastapi import Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .config import get_settings
 from .ingest import is_supported_file, list_source_files
@@ -25,6 +25,7 @@ from .wiki import (
     get_functional_requirements_page_payload,
     get_togaf_page_payload,
     get_wiki_page_payload,
+    list_open_wiki_doubts,
     list_functional_requirements,
     list_togaf_artifacts,
     list_wiki_pages,
@@ -34,6 +35,7 @@ from .wiki import (
     normalize_wiki_language,
     get_configured_wiki_language,
     wiki_language_label,
+    write_doubt_resolution_source,
     WIKI_LANGUAGE_OPTIONS,
 )
 
@@ -65,6 +67,10 @@ codex_state: dict = {
 
 class CodexJobRequest(BaseModel):
     language: str = "it"
+
+
+class DoubtResolutionRequest(BaseModel):
+    resolution: str = Field(..., min_length=1, max_length=500000)
 
 
 @app.on_event("startup")
@@ -267,6 +273,28 @@ def api_wiki_search(q: str = Query(default="", max_length=120)):
 @app.get("/api/wiki/graph")
 def api_wiki_graph():
     return JSONResponse(content=build_wiki_graph(settings.wiki_dir))
+
+
+@app.get("/api/wiki/doubts")
+def api_wiki_doubts():
+    doubts = list_open_wiki_doubts(settings.wiki_dir)
+    return JSONResponse(content={"count": len(doubts), "doubts": [doubt.__dict__ for doubt in doubts]})
+
+
+@app.post("/api/wiki/doubts/{doubt_id}/resolve")
+def api_resolve_wiki_doubt(doubt_id: str, payload: DoubtResolutionRequest):
+    resolution = payload.resolution.strip()
+    if not resolution:
+        raise HTTPException(status_code=400, detail="Missing resolution")
+
+    doubts = list_open_wiki_doubts(settings.wiki_dir)
+    doubt = next((item for item in doubts if item.id == doubt_id), None)
+    if not doubt:
+        raise HTTPException(status_code=404, detail="Doubt not found")
+
+    target_path = write_doubt_resolution_source(settings.raw_dir, doubt, resolution)
+    rel_path = str(target_path.resolve().relative_to(settings.raw_dir.resolve())).replace("\\", "/")
+    return JSONResponse(content={"status": "ok", "file": rel_path})
 
 
 @app.get("/api/togaf/pages")

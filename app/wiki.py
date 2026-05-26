@@ -42,6 +42,18 @@ class WikiPage:
 
 
 @dataclass(frozen=True)
+class WikiDoubt:
+    id: str
+    text: str
+    page_slug: str
+    page_title: str
+    rel_path: str
+    section: str
+    line: int
+    page_url: str
+
+
+@dataclass(frozen=True)
 class PreparedSource:
     rel_path: str
     extracted_path: str
@@ -82,6 +94,8 @@ WIKI_CONFIG_FILE = "_config.md"
 TOGAF_WIKI_DIR_NAME = "togaf"
 FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME = "requisiti-funzionali"
 WIKI_LANGUAGE_RE = re.compile(r"^-\s*Codice lingua:\s*([a-z]{2})\s*$", re.MULTILINE)
+MARKDOWN_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+MARKDOWN_BULLET_RE = re.compile(r"^\s*[-*]\s+(.+?)\s*$")
 TOGAF_PHASE_ORDER = [
     "Preliminary Phase",
     "Phase A - Architecture Vision",
@@ -606,6 +620,193 @@ def build_wiki_graph(wiki_dir: Path) -> dict:
             )
 
     return {"nodes": nodes + list(missing_nodes.values()), "edges": edges}
+
+
+def _normalize_doubt_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii").lower()
+    ascii_text = re.sub(r"[\[\]`*_]+", " ", ascii_text)
+    return re.sub(r"\s+", " ", ascii_text).strip(" .:-")
+
+
+def _is_doubt_section_title(title: str) -> bool:
+    normalized = _normalize_doubt_text(title)
+    return any(
+        marker in normalized
+        for marker in (
+            "dubb",
+            "contraddizion",
+            "open question",
+            "domande aperte",
+            "questioni aperte",
+            "gap informativ",
+        )
+    )
+
+
+def _is_empty_doubt_text(text: str) -> bool:
+    normalized = _normalize_doubt_text(text)
+    return (
+        not normalized
+        or normalized in {"nessuno", "nessuna", "none", "no open doubts", "nessun dubbio"}
+        or normalized.startswith("nessun dubbio")
+        or normalized.startswith("nessuna contraddizione")
+    )
+
+
+def _wiki_page_url(rel_path: str, page_slug: str) -> str:
+    rel = rel_path.replace("\\", "/")
+    if rel.startswith(f"{TOGAF_WIKI_DIR_NAME}/"):
+        return f"/togaf#{page_slug}"
+    if rel.startswith(f"{FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME}/"):
+        return f"/requirements#{page_slug}"
+    return f"/#{page_slug}"
+
+
+def _iter_doubt_candidate_paths(wiki_dir: Path) -> list[Path]:
+    if not wiki_dir.exists():
+        return []
+
+    return [
+        path
+        for path in sorted(wiki_dir.rglob("*.md"), key=lambda item: str(item).lower())
+        if path.is_file() and path.name.lower() != "_log.md"
+    ]
+
+
+def list_open_wiki_doubts(wiki_dir: Path) -> list[WikiDoubt]:
+    doubts: list[WikiDoubt] = []
+    wiki_root = wiki_dir.resolve()
+
+    for path in _iter_doubt_candidate_paths(wiki_dir):
+        markdown = path.read_text(encoding="utf-8", errors="ignore")
+        rel_path = str(path.resolve().relative_to(wiki_root)).replace("\\", "/")
+        page_slug = path.stem
+        page_title = title_from_markdown_text(markdown, page_slug)
+        lines = markdown.splitlines()
+
+        in_doubt_section = False
+        section_title = ""
+        section_level = 0
+        bullet_line = 0
+        bullet_parts: list[str] = []
+
+        def flush_bullet() -> None:
+            nonlocal bullet_line, bullet_parts
+            if not bullet_parts:
+                return
+
+            text = " ".join(part.strip() for part in bullet_parts if part.strip())
+            if not _is_empty_doubt_text(text):
+                digest = sha1(f"{rel_path}:{bullet_line}:{text}".encode("utf-8")).hexdigest()[:16]
+                doubts.append(
+                    WikiDoubt(
+                        id=digest,
+                        text=text,
+                        page_slug=page_slug,
+                        page_title=page_title,
+                        rel_path=rel_path,
+                        section=section_title,
+                        line=bullet_line,
+                        page_url=_wiki_page_url(rel_path, page_slug),
+                    )
+                )
+            bullet_line = 0
+            bullet_parts = []
+
+        for line_number, raw_line in enumerate(lines, start=1):
+            heading = MARKDOWN_HEADING_RE.match(raw_line.strip())
+            if heading:
+                heading_level = len(heading.group(1))
+                if in_doubt_section and heading_level <= section_level:
+                    flush_bullet()
+                    in_doubt_section = False
+                    section_title = ""
+                    section_level = 0
+
+                if _is_doubt_section_title(heading.group(2)):
+                    flush_bullet()
+                    in_doubt_section = True
+                    section_title = heading.group(2).strip()
+                    section_level = heading_level
+                continue
+
+            if not in_doubt_section:
+                continue
+
+            bullet = MARKDOWN_BULLET_RE.match(raw_line)
+            if bullet:
+                flush_bullet()
+                bullet_line = line_number
+                bullet_parts = [bullet.group(1).strip()]
+                continue
+
+            if bullet_parts and raw_line.startswith((" ", "\t")) and raw_line.strip():
+                bullet_parts.append(raw_line.strip())
+                continue
+
+            if bullet_parts and not raw_line.strip():
+                flush_bullet()
+
+        flush_bullet()
+
+    return doubts
+
+
+def _yaml_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=True)
+
+
+def _format_doubt_resolution_source(doubt: WikiDoubt, resolution: str, created_at: str) -> str:
+    wiki_path = f"wiki/{doubt.rel_path}"
+    return (
+        "---\n"
+        "kind: chiarimento-dubbio\n"
+        f"created_at: {_yaml_string(created_at)}\n"
+        "source: \"llm-wiki-ui\"\n"
+        f"doubt_id: {_yaml_string(doubt.id)}\n"
+        f"wiki_page: {_yaml_string(wiki_path)}\n"
+        f"wiki_title: {_yaml_string(doubt.page_title)}\n"
+        f"wiki_slug: {_yaml_string(doubt.page_slug)}\n"
+        f"wiki_section: {_yaml_string(doubt.section)}\n"
+        f"wiki_line: {doubt.line}\n"
+        "purpose: \"Chiarire un dubbio specifico della LLM Wiki alla prossima compilazione\"\n"
+        "---\n\n"
+        f"# Chiarimento dubbio - {doubt.page_title}\n\n"
+        "## Testata operativa\n\n"
+        "- Tipo nota: chiarimento di dubbio LLM Wiki.\n"
+        f"- Pagina da aggiornare: `{wiki_path}`.\n"
+        f"- Titolo pagina: {doubt.page_title}.\n"
+        f"- Sezione da verificare: {doubt.section}.\n"
+        f"- Riga stimata del dubbio: {doubt.line}.\n"
+        f"- ID stabile del dubbio: `{doubt.id}`.\n"
+        "- Azione attesa: usare il chiarimento per aggiornare la pagina indicata; rimuovere il dubbio solo se il chiarimento lo risolve senza introdurre contraddizioni.\n\n"
+        "## Dubbio originale\n\n"
+        f"> {doubt.text}\n\n"
+        "## Chiarimento fornito dall'utente\n\n"
+        f"{resolution.strip()}\n\n"
+        "## Criteri di applicazione\n\n"
+        "- Usa questa nota solo per il dubbio indicato nella testata.\n"
+        "- Se il chiarimento e' sufficiente, aggiorna la pagina sorgente e registra la risoluzione in `wiki/_log.md`.\n"
+        "- Se il chiarimento e' incompleto o in tensione con altre pagine wiki, mantieni o riformula il dubbio e registra la contraddizione in `wiki/_log.md`.\n"
+    )
+
+
+def write_doubt_resolution_source(raw_dir: Path, doubt: WikiDoubt, resolution: str) -> Path:
+    target_dir = raw_dir / "chiarimenti-dubbi"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    slug = slugify_wiki_title(doubt.page_title)[:64]
+    target_path = target_dir / f"{stamp}-{slug}-{doubt.id[:10]}.md"
+    counter = 1
+    while target_path.exists():
+        target_path = target_dir / f"{stamp}-{slug}-{doubt.id[:10]}-{counter}.md"
+        counter += 1
+
+    target_path.write_text(_format_doubt_resolution_source(doubt, resolution, created_at), encoding="utf-8")
+    return target_path
 
 
 def extract_togaf_metadata(markdown: str, page: dict | WikiPage) -> dict:

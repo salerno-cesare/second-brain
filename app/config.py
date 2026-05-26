@@ -22,6 +22,7 @@ class Settings:
     codex_source_list_item_template_path: Path
     codex_source_list_empty_template_path: Path
     codex_togaf_reference_path: Path
+    codex_llm_wiki_skill_dir: Path
 
 
 def _to_abs(path_value: str) -> Path:
@@ -54,6 +55,9 @@ def get_settings() -> Settings:
     codex_togaf_reference_path = _to_abs(
         os.getenv("CODEX_TOGAF_REFERENCE", "./config/togaf-template-deliverables.md")
     )
+    codex_llm_wiki_skill_dir = _to_abs(
+        os.getenv("CODEX_LLM_WIKI_SKILL_DIR", "./config/skills/karpathy-llm-wiki")
+    )
 
     return Settings(
         source_dir=source_dir,
@@ -72,4 +76,5 @@ def get_settings() -> Settings:
         codex_source_list_item_template_path=codex_source_list_item_template_path,
         codex_source_list_empty_template_path=codex_source_list_empty_template_path,
         codex_togaf_reference_path=codex_togaf_reference_path,
+        codex_llm_wiki_skill_dir=codex_llm_wiki_skill_dir,
     )

@@ -15,7 +15,7 @@ Non ci sono piu' SQLite, FTS5, indicizzazione o retrieval API: l'app serve solo 
 - Upload di `.txt`, `.md`, `.rst`, `.log`, `.csv`, `.json`, `.html`, `.vtt`, `.pdf`, `.docx`, `.pptx`, `.xlsx`.
 - Estrazione testo dalle fonti raw per facilitare il lavoro di Codex.
 - Esecuzione locale di `codex exec` tramite PowerShell.
-- Compilazione wiki con pagine Markdown, `_index.md`, `_log.md` e link `[[wiki-style]]`.
+- Compilazione wiki tramite skill Agent `karpathy-llm-wiki`, adattata alle convenzioni locali `_index.md`, `_log.md` e link `[[wiki-style]]`.
 - Aggiornamento automatico della vista requisiti funzionali ad ogni compilazione della wiki principale.
 - Compilazione separata di una vista TOGAF alternativa, derivata dalla LLM Wiki, con artefatti navigabili per fase ADM, dominio e tipo.
 - Lint/manutenzione della wiki esistente.
@@ -47,7 +47,7 @@ In VS Code usa il profilo **LLM Wiki: locale FastAPI** oppure il task **App: run
 2. Scegli la lingua della wiki, se non e' gia' configurata. Il default e' **Italiano**.
 3. Premi **Compila Wiki e Requisiti** per aggiornare la LLM Wiki principale e la wiki parallela dei requisiti funzionali.
 4. L'app prepara gli estratti in `knowledge/.codex_sources/`.
-5. Codex CLI viene avviato via PowerShell locale e scrive solo in `knowledge/wiki/`.
+5. L'app copia la skill `karpathy-llm-wiki` in `knowledge/.agents/skills/` e avvia Codex CLI via PowerShell locale.
 6. Premi **Compila TOGAF** per aggiornare `knowledge/wiki/togaf/` partendo dalla LLM Wiki gia' compilata.
 7. Apri le pagine generate dalla sezione **Pagine Wiki**, gli artefatti dalla sezione **TOGAF** oppure epiche e user story dalla sezione **Requisiti**.
 
@@ -65,7 +65,8 @@ Variabili principali in `.env.example`:
 - `CODEX_MODEL`
 - `CODEX_TIMEOUT_SECONDS`
 - `CODEX_SOURCE_CHAR_LIMIT`: `0` disabilita il taglio degli estratti in `knowledge/.codex_sources/`; un valore positivo impone un limite massimo di caratteri per fonte.
-- `CODEX_PROMPT_TEMPLATE`: percorso del prompt principale usato da Codex, con placeholder `{mode}`, `{task}` e `{source_list}`.
+- `CODEX_PROMPT_TEMPLATE`: percorso del prompt-adapter che attiva la skill locale, con placeholder `{mode}`, `{task}`, `{source_list}`, `{skill_name}`, `{skill_path}` e `{togaf_reference}`.
+- `CODEX_LLM_WIKI_SKILL_DIR`: percorso della skill vendorizzata `karpathy-llm-wiki` copiata nella working directory di Codex prima di ogni run.
 - `CODEX_TASK_PROMPTS`: obiettivi per le modalita' `compile`, `togaf` e `lint`.
 - `CODEX_SOURCE_EXTRACT_TEMPLATE`: template dei file estratti in `knowledge/.codex_sources/`.
 - `CODEX_SOURCE_LIST_ITEM_TEMPLATE`: template di ogni voce fonte nel prompt principale.

@@ -25,5 +25,6 @@ knowledge/processed/*
 knowledge/wiki/*
 !knowledge/wiki/.gitkeep
 knowledge/.codex_sources/
+knowledge/.agents/
 data/*
 !data/.gitkeep

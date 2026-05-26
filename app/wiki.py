@@ -81,6 +81,8 @@ SOURCE_CACHE_VERSION = 1
 WIKI_CONFIG_FILE = "_config.md"
 TOGAF_WIKI_DIR_NAME = "togaf"
 FUNCTIONAL_REQUIREMENTS_WIKI_DIR_NAME = "requisiti-funzionali"
+CODEX_LLM_WIKI_SKILL_NAME = "karpathy-llm-wiki"
+CODEX_AGENT_SKILLS_DIR = Path(".agents") / "skills"
 WIKI_LANGUAGE_RE = re.compile(r"^-\s*Codice lingua:\s*([a-z]{2})\s*$", re.MULTILINE)
 TOGAF_PHASE_ORDER = [
     "Preliminary Phase",
@@ -1177,21 +1179,55 @@ def _load_togaf_reference(settings: Settings) -> str:
         return "TOGAF artifacts reference not configured."
 
 
+def _relative_to_source_dir(settings: Settings, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(settings.source_dir.resolve()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
+
+
+def _codex_runtime_skill_dir(settings: Settings) -> Path:
+    return settings.source_dir / CODEX_AGENT_SKILLS_DIR / CODEX_LLM_WIKI_SKILL_NAME
+
+
+def ensure_codex_llm_wiki_skill(settings: Settings) -> Path:
+    skill_source_dir = settings.codex_llm_wiki_skill_dir.resolve()
+    skill_manifest = skill_source_dir / "SKILL.md"
+    if not skill_manifest.exists() or not skill_manifest.is_file():
+        raise FileNotFoundError(f"Karpathy LLM Wiki skill not found: {skill_manifest}")
+
+    target_dir = _codex_runtime_skill_dir(settings).resolve()
+    source_root = settings.source_dir.resolve()
+    if source_root != target_dir and source_root not in target_dir.parents:
+        raise ValueError("Runtime skill directory must stay inside the wiki source directory")
+
+    if skill_source_dir == target_dir:
+        return target_dir
+
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(skill_source_dir, target_dir, dirs_exist_ok=True)
+    return target_dir
+
+
 def build_codex_prompt(
     settings: Settings,
     mode: str,
     sources: list[PreparedSource],
     language: str = DEFAULT_WIKI_LANGUAGE,
+    skill_dir: Path | None = None,
 ) -> str:
     template = _read_config_text(settings.codex_prompt_template_path, "Prompt template Codex")
     language_label = wiki_language_label(language)
+    runtime_skill_dir = skill_dir or _codex_runtime_skill_dir(settings)
     return _format_config_template(
         template,
         {
             "mode": mode,
             "task": _load_codex_task_prompt(settings, mode),
             "source_list": _build_source_list(settings, sources),
-            "togaf_reference": _load_togaf_reference(settings),
+            "togaf_reference": _load_togaf_reference(settings) if mode == "togaf" else "Non applicabile in questa modalita.",
+            "skill_name": CODEX_LLM_WIKI_SKILL_NAME,
+            "skill_path": _relative_to_source_dir(settings, runtime_skill_dir),
             "language": language_label,
             "language_instruction": (
                 f"Scrivi e mantieni tutte le pagine wiki, _index.md, _log.md e il riepilogo finale "
@@ -1370,8 +1406,27 @@ def run_codex_wiki_job(
         )
 
     language = ensure_wiki_language_config(settings.wiki_dir, language)
-    _emit_codex_progress(progress_callback, "status", f"Building Codex prompt in {wiki_language_label(language)}...")
-    prompt = build_codex_prompt(settings, mode, sources, language)
+    _emit_codex_progress(progress_callback, "status", "Installing Karpathy LLM Wiki skill for Codex...")
+    try:
+        skill_dir = ensure_codex_llm_wiki_skill(settings)
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        elapsed = time.monotonic() - started
+        _emit_codex_progress(progress_callback, "stderr", str(exc))
+        return CodexRunResult(
+            ok=False,
+            mode=mode,
+            returncode=4,
+            elapsed_seconds=elapsed,
+            message=str(exc),
+            stdout="",
+            stderr=str(exc),
+            sources=sources,
+        )
+
+    skill_rel_path = _relative_to_source_dir(settings, skill_dir)
+    _emit_codex_progress(progress_callback, "status", f"Karpathy LLM Wiki skill ready at {skill_rel_path}.")
+    _emit_codex_progress(progress_callback, "status", f"Building Codex skill request in {wiki_language_label(language)}...")
+    prompt = build_codex_prompt(settings, mode, sources, language, skill_dir)
     source_text_dir = _source_text_dir(settings)
     source_text_dir.mkdir(parents=True, exist_ok=True)
     prompt_path = source_text_dir / "codex-prompt.txt"

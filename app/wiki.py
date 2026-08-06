@@ -1411,7 +1411,7 @@ def _build_codex_powershell_script(settings: Settings, prompt_path: Path, output
     codex_args = [
         "exec",
         "--skip-git-repo-check",
-        "--full-auto",
+        "--dangerously-bypass-approvals-and-sandbox",
         "--ephemeral",
         "-C",
         str(settings.source_dir),

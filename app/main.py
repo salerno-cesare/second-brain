@@ -393,8 +393,10 @@ def _run_codex_background(mode: str, language: str) -> None:
     language = normalize_wiki_language(language)
     if mode == "togaf":
         start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
+    elif mode == "requirements":
+        start_message = "Codex is compiling the functional requirements view from the LLM Wiki..."
     elif mode == "compile":
-        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
+        start_message = "Codex is compiling the wiki from the local shell..."
     else:
         start_message = "Codex is running wiki maintenance from the local shell..."
     _set_codex_state(
@@ -455,8 +457,10 @@ def _start_codex_job(mode: str, language: str = "it") -> JSONResponse:
     language = normalize_wiki_language(language)
     if mode == "togaf":
         start_message = "Codex is compiling the TOGAF wiki from the LLM Wiki..."
+    elif mode == "requirements":
+        start_message = "Codex is compiling the functional requirements view from the LLM Wiki..."
     elif mode == "compile":
-        start_message = "Codex is compiling the wiki and functional requirements from the local shell..."
+        start_message = "Codex is compiling the wiki from the local shell..."
     else:
         start_message = "Codex is running wiki maintenance from the local shell..."
     with codex_lock:
@@ -514,6 +518,11 @@ def api_wiki_compile(payload: CodexJobRequest | None = None):
 @app.post("/api/wiki/togaf")
 def api_wiki_togaf(payload: CodexJobRequest | None = None):
     return _start_codex_job("togaf", payload.language if payload else "it")
+
+
+@app.post("/api/wiki/requirements")
+def api_wiki_requirements(payload: CodexJobRequest | None = None):
+    return _start_codex_job("requirements", payload.language if payload else "it")
 
 
 @app.post("/api/wiki/lint")

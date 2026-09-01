@@ -1551,9 +1551,11 @@ def run_codex_wiki_job(
         ensure_wiki_layout(settings)
         ensure_togaf_layout(settings)
         sources = []
+    elif mode == "requirements":
+        ensure_wiki_layout(settings)
+        ensure_functional_requirements_layout(settings)
+        sources = []
     else:
-        if mode == "compile":
-            ensure_functional_requirements_layout(settings)
         sources = prepare_sources_for_codex(settings)
     _emit_codex_progress(progress_callback, "status", f"Prepared {len(sources)} source file(s) for Codex.")
 
@@ -1623,18 +1625,20 @@ def run_codex_wiki_job(
             ok = False
             returncode = 3
             message = (
-                "Codex updated the wiki and functional requirements, but the move to processed/ is incomplete. "
+                "Codex updated the wiki, but the move to processed/ is incomplete. "
                 f"Files moved: {moved_count}, errors: {len(move_errors)}."
             )
             details = "\n".join(move_errors)
             stderr = (stderr + "\n\n" if stderr else "") + f"Errors moving files to processed/:\n{details}"
         else:
             message = (
-                "Codex updated the wiki and functional requirements view "
+                "Codex updated the wiki "
                 f"and moved {moved_count} files to processed/."
             )
     elif ok and mode == "togaf":
         message = "Codex updated the TOGAF wiki from the LLM Wiki."
+    elif ok and mode == "requirements":
+        message = "Codex updated the functional requirements view from the LLM Wiki."
     else:
         message = "Codex updated the wiki." if ok else error_message or "Codex did not complete the compilation."
     _emit_codex_progress(progress_callback, "status", message)

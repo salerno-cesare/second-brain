@@ -4,6 +4,7 @@ const textForm = document.getElementById("text-upload-form");
 const textOutput = document.getElementById("text-upload-result");
 const compileButton = document.getElementById("compile-wiki");
 const compileTogafButton = document.getElementById("compile-togaf");
+const compileRequirementsButton = document.getElementById("compile-requirements");
 const lintButton = document.getElementById("lint-wiki");
 const codexStatus = document.getElementById("codex-status");
 const codexLivePanel = document.getElementById("codex-live-panel");
@@ -143,6 +144,9 @@ async function refreshCodexStatus() {
   if (compileTogafButton) {
     compileTogafButton.disabled = Boolean(data.running);
   }
+  if (compileRequirementsButton) {
+    compileRequirementsButton.disabled = Boolean(data.running);
+  }
   if (lintButton) {
     lintButton.disabled = Boolean(data.running);
   }
@@ -174,6 +178,7 @@ async function startCodexJob(kind) {
   const endpoints = {
     compile: "/api/wiki/compile",
     togaf: "/api/wiki/togaf",
+    requirements: "/api/wiki/requirements",
     lint: "/api/wiki/lint",
   };
   const endpoint = endpoints[kind] || endpoints.compile;
@@ -207,6 +212,10 @@ if (compileButton) {
 
 if (compileTogafButton) {
   compileTogafButton.addEventListener("click", () => startCodexJob("togaf"));
+}
+
+if (compileRequirementsButton) {
+  compileRequirementsButton.addEventListener("click", () => startCodexJob("requirements"));
 }
 
 if (lintButton) {

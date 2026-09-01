@@ -5,6 +5,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# Portable toolchain (uv, Python, cache) — everything stays inside the project.
+tools/
+.uv-cache/
+
 node_modules/
 dist/
 build/

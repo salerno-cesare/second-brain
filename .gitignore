@@ -17,13 +17,7 @@ build/
 
 *.log
 
-# Local knowledge base content is intentionally not versioned.
-knowledge/raw/*
-!knowledge/raw/.gitkeep
-knowledge/processed/*
-!knowledge/processed/.gitkeep
-knowledge/wiki/*
-!knowledge/wiki/.gitkeep
+# Local knowledge base content: wiki/raw/processed are tracked; codex_sources remain local.
 knowledge/.codex_sources/
 data/*
 !data/.gitkeep

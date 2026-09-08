@@ -4,6 +4,7 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+graphify-out/
 
 # Portable toolchain (uv, Python, cache) — everything stays inside the project.
 tools/

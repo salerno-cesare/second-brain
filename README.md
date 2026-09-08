@@ -41,6 +41,32 @@ uv run --with-requirements requirements.txt uvicorn app.main:app --reload
 
 Apri: http://127.0.0.1:8000
 
+## CLI Wiki
+
+I job e le consultazioni principali sono disponibili anche da terminale. Su Windows
+il wrapper prepara automaticamente l'ambiente portabile:
+
+```powershell
+.\scripts\wiki.ps1 compile --language it
+.\scripts\wiki.ps1 requirements
+.\scripts\wiki.ps1 togaf
+.\scripts\wiki.ps1 lint
+.\scripts\wiki.ps1 status
+.\scripts\wiki.ps1 pages --area wiki
+.\scripts\wiki.ps1 search "testo da cercare" --area requirements
+.\scripts\wiki.ps1 show _index --area wiki
+.\scripts\wiki.ps1 doubts
+```
+
+Con un ambiente Python gia' attivo, la stessa CLI e' portabile e si invoca con:
+
+```text
+python -m app.cli <comando> [opzioni]
+```
+
+Usa `python -m app.cli --help` oppure `python -m app.cli <comando> --help`
+per l'elenco aggiornato delle opzioni.
+
 In VS Code usa il profilo **LLM Wiki: locale FastAPI** oppure il task **App: run local**.
 
 ## Uso
